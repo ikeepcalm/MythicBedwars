@@ -7,13 +7,12 @@ import java.sql.*;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.logging.Level;
 
 public class SQLiteDatabase {
 
     private final MythicBedwars plugin;
-    private Connection connection;
     private final File databaseFile;
+    private Connection connection;
 
     public SQLiteDatabase(MythicBedwars plugin) {
         this.plugin = plugin;
@@ -25,9 +24,9 @@ public class SQLiteDatabase {
             Class.forName("org.sqlite.JDBC");
             connection = DriverManager.getConnection("jdbc:sqlite:" + databaseFile.getAbsolutePath());
             createTables();
-            plugin.getLogger().info("SQLite database initialized.");
+            plugin.log("SQLite database initialized.");
         } catch (Exception e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to initialize SQLite database", e);
+            plugin.log("Failed to initialize SQLite database: " + e.getMessage());
         }
     }
 
@@ -96,7 +95,7 @@ public class SQLiteDatabase {
         return CompletableFuture.runAsync(() -> {
             try {
                 if (connection == null || connection.isClosed()) {
-                    plugin.getLogger().log(Level.SEVERE, "Database connection is not available for async save.");
+                    plugin.log("Database connection is not available for async save.");
                     return;
                 }
                 connection.setAutoCommit(false);
@@ -157,17 +156,17 @@ public class SQLiteDatabase {
                 saveGlobalStats();
 
                 connection.commit();
-                plugin.getLogger().info("Statistics saved asynchronously to SQLite database.");
+                plugin.log("Statistics saved asynchronously to SQLite database.");
 
             } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Failed to save statistics asynchronously", e);
+                plugin.log("Failed to save statistics asynchronously: " + e.getMessage());
                 try {
                     if (connection != null && !connection.isClosed() && !connection.getAutoCommit()) {
                         connection.rollback();
-                        plugin.getLogger().info("Transaction rolled back due to async save failure.");
+                        plugin.log("Transaction rolled back due to async save failure.");
                     }
                 } catch (SQLException ex) {
-                    plugin.getLogger().log(Level.SEVERE, "Failed to rollback transaction in async save", ex);
+                    plugin.log("Failed to rollback transaction in async save: " + ex.getMessage());
                 }
             } finally {
                 try {
@@ -175,7 +174,7 @@ public class SQLiteDatabase {
                         connection.setAutoCommit(true);
                     }
                 } catch (SQLException e) {
-                    plugin.getLogger().log(Level.SEVERE, "Failed to reset auto-commit in async save", e);
+                    plugin.log("Failed to reset auto-commit in async save: " + e.getMessage());
                 }
             }
         });
@@ -184,7 +183,7 @@ public class SQLiteDatabase {
     private void saveStatisticsSync(Map<String, PathwayStats> statistics) {
         try {
             if (connection == null || connection.isClosed()) {
-                plugin.getLogger().log(Level.SEVERE, "Database connection is not available for sync save.");
+                plugin.log("Database connection is not available for sync save.");
                 return;
             }
             connection.setAutoCommit(false);
@@ -245,16 +244,16 @@ public class SQLiteDatabase {
             saveGlobalStats();
 
             connection.commit();
-            plugin.getLogger().info("Statistics saved to SQLite database.");
+            plugin.log("Statistics saved to SQLite database.");
         } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to save statistics", e);
+            plugin.log("Failed to save statistics: " + e.getMessage());
             try {
                 if (connection != null && !connection.isClosed() && !connection.getAutoCommit()) {
                     connection.rollback();
-                    plugin.getLogger().info("Transaction rolled back due to sync save failure.");
+                    plugin.log("Transaction rolled back due to sync save failure.");
                 }
             } catch (SQLException ex) {
-                plugin.getLogger().log(Level.SEVERE, "Failed to rollback transaction", ex);
+                plugin.log("Failed to rollback transaction: " + ex.getMessage());
             }
         } finally {
             try {
@@ -262,7 +261,7 @@ public class SQLiteDatabase {
                     connection.setAutoCommit(true);
                 }
             } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Failed to reset auto-commit", e);
+                plugin.log("Failed to reset auto-commit: " + e.getMessage());
             }
         }
     }
@@ -282,7 +281,7 @@ public class SQLiteDatabase {
             Map<String, PathwayStats> result = new HashMap<>();
             try {
                 if (connection == null || connection.isClosed()) {
-                    plugin.getLogger().log(Level.SEVERE, "Database connection is not available for loading statistics.");
+                    plugin.log("Database connection is not available for loading statistics.");
                     return result;
                 }
 
@@ -339,9 +338,9 @@ public class SQLiteDatabase {
                         }
                     }
                 }
-                plugin.getLogger().info("Loaded " + result.size() + " pathway statistics from SQLite.");
+                plugin.log("Loaded " + result.size() + " pathway statistics from SQLite.");
             } catch (SQLException e) {
-                plugin.getLogger().log(Level.SEVERE, "Failed to load statistics", e);
+                plugin.log("Failed to load statistics: " + e.getMessage());
             }
             return result;
         });
@@ -351,10 +350,10 @@ public class SQLiteDatabase {
         try {
             if (connection != null && !connection.isClosed()) {
                 connection.close();
-                plugin.getLogger().info("SQLite database connection closed.");
+                plugin.log("SQLite database connection closed.");
             }
         } catch (SQLException e) {
-            plugin.getLogger().log(Level.SEVERE, "Failed to close database connection", e);
+            plugin.log("Failed to close database connection: " + e.getMessage());
         }
     }
 
@@ -362,7 +361,7 @@ public class SQLiteDatabase {
         try {
             return connection != null && !connection.isClosed();
         } catch (SQLException e) {
-            plugin.getLogger().log(Level.WARNING, "Error checking SQLite connection status", e);
+            plugin.log("Error checking SQLite connection status: " + e.getMessage());
             return false;
         }
     }

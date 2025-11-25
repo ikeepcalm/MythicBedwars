@@ -1,10 +1,8 @@
 package dev.ua.ikeepcalm.mythicBedwars;
 
-import com.djrapitops.plan.capability.CapabilityService;
-import com.djrapitops.plan.extension.ExtensionService;
 import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
-import dev.ua.ikeepcalm.coi.pathways.Pathways;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import dev.ua.ikeepcalm.mythicBedwars.cmd.CommandManager;
 import dev.ua.ikeepcalm.mythicBedwars.cmd.impls.SpectatorCommand;
 import dev.ua.ikeepcalm.mythicBedwars.config.ConfigLoader;
@@ -21,17 +19,18 @@ import dev.ua.ikeepcalm.mythicBedwars.domain.stats.db.PathwayStats;
 import dev.ua.ikeepcalm.mythicBedwars.domain.stats.db.SQLiteDatabase;
 import dev.ua.ikeepcalm.mythicBedwars.domain.voting.service.VotingManager;
 import dev.ua.ikeepcalm.mythicBedwars.listener.*;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.serialization.ConfigurationSerialization;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.logging.Level;
 import java.util.stream.Collectors;
 
 public final class MythicBedwars extends JavaPlugin {
@@ -51,19 +50,37 @@ public final class MythicBedwars extends JavaPlugin {
     private BukkitTask periodicSaveTask;
     private int saveIntervalSeconds;
 
+    private CircleOfImaginationAPI circleOfImaginationAPI;
+
+    public static MythicBedwars getInstance() {
+        return instance;
+    }
+
+    public CircleOfImaginationAPI getCircleOfImaginationAPI() {
+        return this.circleOfImaginationAPI;
+    }
+
     @Override
     public void onEnable() {
         instance = this;
 
         ConfigurationSerialization.registerClass(PathwayStats.class);
 
+        CircleOfImaginationAPI coiApi = loadCircleOfImagination();
+        if (coiApi != null) {
+            circleOfImaginationAPI = coiApi;
+        } else {
+            log("CircleOfImagination not found! Disabling addon...");
+            getServer().getPluginManager().disablePlugin(this);
+        }
+
         if (!Bukkit.getPluginManager().isPluginEnabled("MBedwars")) {
-            getLogger().severe("MBedwars not found! Disabling addon...");
+            log("MBedwars not found! Disabling addon...");
             getServer().getPluginManager().disablePlugin(this);
             return;
         } else {
-            final int supportedAPIVersion = 203;
-            final String supportedVersionName = "5.5.3";
+            final int supportedAPIVersion = 205;
+            final String supportedVersionName = "5.5.5";
 
             try {
                 Class<?> apiClass = Class.forName("de.marcely.bedwars.api.BedwarsAPI");
@@ -71,14 +88,14 @@ public final class MythicBedwars extends JavaPlugin {
 
                 if (apiVersion < supportedAPIVersion) throw new IllegalStateException();
             } catch (Exception e) {
-                getLogger().warning("Sorry, your installed version of MBedwars is not supported. Please install at least v" + supportedVersionName);
+                log("Sorry, your installed version of MBedwars is not supported. Please install at least v" + supportedVersionName);
                 Bukkit.getPluginManager().disablePlugin(this);
                 return;
             }
         }
 
         if (!Bukkit.getPluginManager().isPluginEnabled("CircleOfImagination")) {
-            getLogger().severe("CircleOfImagination not found! Disabling addon...");
+            log("CircleOfImagination not found! Disabling addon...");
             getServer().getPluginManager().disablePlugin(this);
             return;
         }
@@ -127,53 +144,70 @@ public final class MythicBedwars extends JavaPlugin {
                 long saveIntervalTicks = this.saveIntervalSeconds * 20L;
                 this.periodicSaveTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
                     if (database.isConnected() && statisticsManager.getPathwayStatistics() != null && !statisticsManager.getPathwayStatistics().isEmpty()) {
-                        getLogger().info("Periodically saving statistics...");
-                        database.saveStatistics(statisticsManager.getPathwayStatistics()).thenRun(() -> getLogger().info("Periodic statistics save complete.")).exceptionally(ex -> {
-                            getLogger().log(Level.WARNING, "Periodic statistics save failed.", ex);
+                        log("Periodically saving statistics...");
+                        database.saveStatistics(statisticsManager.getPathwayStatistics()).thenRun(() -> log("Periodic statistics save complete.")).exceptionally(ex -> {
+                            log("Periodic statistics save failed: " + ex.getMessage());
                             return null;
                         });
                     } else if (!database.isConnected()) {
-                        getLogger().warning("Cannot perform periodic statistics save: Database not connected.");
+                        log("Cannot perform periodic statistics save: Database not connected.");
                     }
                 }, saveIntervalTicks, saveIntervalTicks);
-                getLogger().info("Scheduled periodic statistics save every " + this.saveIntervalSeconds + " seconds.");
+                log("Scheduled periodic statistics save every " + this.saveIntervalSeconds + " seconds.");
             } else if (this.saveIntervalSeconds <= 0) {
-                getLogger().info("Periodic statistics saving is disabled (save-interval-seconds <= 0).");
+                log("Periodic statistics saving is disabled (save-interval-seconds <= 0).");
             }
 
-            getLogger().info("BedwarsMagicAddon enabled!");
+            log("BedwarsMagicAddon enabled!");
         });
+    }
+
+    private CircleOfImaginationAPI loadCircleOfImagination() {
+        Plugin coiPlugin = getServer().getPluginManager().getPlugin("CircleOfImagination");
+
+        if (coiPlugin != null) {
+            log("CircleOfImagination found, enabling Mythic Bedwars!");
+            CircleOfImaginationAPI api = Bukkit.getServer().getServicesManager().load(CircleOfImaginationAPI.class);
+            if (api != null) {
+                return api;
+            } else {
+                log("CircleOfImagination API not found, disabling Venture To The Subspace");
+                getServer().getPluginManager().disablePlugin(this);
+            }
+        }
+
+        return null;
     }
 
     @Override
     public void onDisable() {
         if (periodicSaveTask != null && !periodicSaveTask.isCancelled()) {
             periodicSaveTask.cancel();
-            getLogger().info("Cancelled periodic statistics save task.");
+            log("Cancelled periodic statistics save task.");
         }
 
         if (spectatorManager != null) {
             spectatorManager.shutdown();
-            getLogger().info("Spectator manager shut down.");
+            log("Spectator manager shut down.");
         }
 
         if (statisticsManager != null && database != null && database.isConnected()) {
-            getLogger().info("Saving final statistics synchronously on disable...");
+            log("Saving final statistics synchronously on disable...");
             database.saveStatistics(statisticsManager.getPathwayStatistics(), true).thenRun(() -> {
-                getLogger().info("Final statistics saved.");
+                log("Final statistics saved.");
             }).exceptionally(ex -> {
-                getLogger().severe("An unexpected issue occurred with the final save's CompletableFuture: " + ex.getMessage());
+                log("An unexpected issue occurred with the final save's CompletableFuture: " + ex.getMessage());
                 return null;
             }).thenRun(() -> {
                 database.close();
-                getLogger().info("Database connection closed.");
+                log("Database connection closed.");
             });
         } else {
             if (database != null && !database.isConnected()) {
-                getLogger().warning("Could not save final statistics: Database not connected.");
+                log("Could not save final statistics: Database not connected.");
             } else if (database != null) {
                 database.close();
-                getLogger().info("Database connection closed (statistics or manager was null).");
+                log("Database connection closed (statistics or manager was null).");
             }
         }
 
@@ -181,7 +215,7 @@ public final class MythicBedwars extends JavaPlugin {
             pathwayManager.cleanupAll();
         }
 
-        getLogger().info("BedwarsMagicAddon disabled!");
+        log("BedwarsMagicAddon disabled!");
     }
 
     private CompletableFuture<Void> loadStatistics() {
@@ -189,15 +223,15 @@ public final class MythicBedwars extends JavaPlugin {
 
         return migration.migrateFromYaml().thenCompose(migrated -> {
             if (migrated) {
-                getLogger().info("Successfully migrated statistics from YAML to SQLite!");
+                log("Successfully migrated statistics from YAML to SQLite!");
             }
 
             return database.loadStatistics().thenAccept(loadedStats -> {
                 if (loadedStats != null && !loadedStats.isEmpty()) {
                     statisticsManager.setPathwayStatistics(loadedStats);
-                    getLogger().info("Loaded " + loadedStats.size() + " pathway statistics entries from database.");
+                    log("Loaded " + loadedStats.size() + " pathway statistics entries from database.");
                 } else {
-                    getLogger().info("No statistics data found in database.");
+                    log("No statistics data found in database.");
                 }
             });
         });
@@ -219,34 +253,53 @@ public final class MythicBedwars extends JavaPlugin {
     }
 
     private void registerPlanStatistics() {
-        if (Bukkit.getPluginManager().isPluginEnabled("Plan")) {
+        if (!Bukkit.getPluginManager().isPluginEnabled("Plan")) {
+            return;
+        }
 
-            if (statisticsManager == null) {
-                statisticsManager = new StatisticsManager(this);
-            }
+        if (statisticsManager == null) {
+            statisticsManager = new StatisticsManager(this);
+        }
 
-            try {
-                if (CapabilityService.getInstance().hasCapability("DATA_EXTENSION_VALUES")) {
-                    Optional<ExtensionService> service = Optional.ofNullable(ExtensionService.getInstance());
-                    if (service.isPresent()) {
-                        service.get().register(statisticsManager);
-                        getLogger().info("Successfully registered Plan statistics!");
+        try {
+            // Use reflection to avoid ClassNotFoundException when Plan is not installed
+            Class<?> capabilityServiceClass = Class.forName("com.djrapitops.plan.capability.CapabilityService");
+            Object capabilityServiceInstance = capabilityServiceClass.getMethod("getInstance").invoke(null);
+            boolean hasCapability = (boolean) capabilityServiceClass.getMethod("hasCapability", String.class)
+                    .invoke(capabilityServiceInstance, "DATA_EXTENSION_VALUES");
 
-                        CapabilityService.getInstance().registerEnableListener(isPlanEnabled -> {
-                            if (isPlanEnabled) registerPlanStatistics();
-                        });
-                    }
+            if (hasCapability) {
+                Class<?> extensionServiceClass = Class.forName("com.djrapitops.plan.extension.ExtensionService");
+                Object extensionServiceInstance = extensionServiceClass.getMethod("getInstance").invoke(null);
+
+                if (extensionServiceInstance != null) {
+                    // Load the PlanDataExtension class using reflection
+                    Class<?> planExtensionClass = Class.forName("dev.ua.ikeepcalm.mythicBedwars.integration.PlanDataExtension");
+                    Object planExtension = planExtensionClass.getConstructor(StatisticsManager.class)
+                            .newInstance(statisticsManager);
+
+                    Class<?> dataExtensionClass = Class.forName("com.djrapitops.plan.extension.DataExtension");
+                    extensionServiceClass.getMethod("register", dataExtensionClass)
+                            .invoke(extensionServiceInstance, planExtension);
+                    log("Successfully registered Plan statistics!");
+
+                    capabilityServiceClass.getMethod("registerEnableListener", java.util.function.Consumer.class)
+                            .invoke(capabilityServiceInstance, (java.util.function.Consumer<Boolean>) isPlanEnabled -> {
+                                if (isPlanEnabled) registerPlanStatistics();
+                            });
                 }
-            } catch (Exception e) {
-                getLogger().warning("Failed to register Plan statistics: " + e.getMessage());
-                e.printStackTrace();
             }
+        } catch (ClassNotFoundException e) {
+            log("Plan Player Analytics not found. Plan integration disabled.");
+        } catch (Exception e) {
+            log("Failed to register Plan statistics: " + e.getMessage());
         }
     }
 
-    public static MythicBedwars getInstance() {
-        return instance;
+    public void log(String message) {
+        Bukkit.getConsoleSender().sendMessage(Component.text("[MythicBedwars]").color(NamedTextColor.LIGHT_PURPLE).append(Component.text(" " + message)));
     }
+
 
     public PathwayBalancer getPathwayBalancer() {
         return pathwayBalancer;
@@ -291,6 +344,6 @@ public final class MythicBedwars extends JavaPlugin {
     }
 
     public List<String> getAvailablePathways() {
-        return new ArrayList<>(Pathways.allPathways.keySet());
+        return new ArrayList<>(circleOfImaginationAPI.getAllPathwayNames());
     }
 }

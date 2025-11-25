@@ -16,8 +16,8 @@ public class VotingReminderTask extends BukkitRunnable {
 
     private final Arena arena;
     private final VotingSession session;
-    private int reminderCount = 0;
     private final int maxReminders;
+    private int reminderCount = 0;
 
     public VotingReminderTask(MythicBedwars plugin, Arena arena, VotingSession session) {
         this.arena = arena;

@@ -9,29 +9,28 @@ import java.io.File;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.logging.Level;
 
 public class DatabaseMigration {
-    
+
     private final MythicBedwars plugin;
     private final SQLiteDatabase database;
-    
+
     public DatabaseMigration(MythicBedwars plugin, SQLiteDatabase database) {
         this.plugin = plugin;
         this.database = database;
     }
-    
+
     public CompletableFuture<Boolean> migrateFromYaml() {
         File yamlFile = new File(plugin.getDataFolder(), "statistics.yml");
         if (!yamlFile.exists()) {
             return CompletableFuture.completedFuture(false);
         }
-        
+
         return CompletableFuture.supplyAsync(() -> {
             try {
                 FileConfiguration config = YamlConfiguration.loadConfiguration(yamlFile);
                 Map<String, PathwayStats> stats = new HashMap<>();
-                
+
                 for (String key : config.getKeys(false)) {
                     ConfigurationSection section = config.getConfigurationSection(key);
                     if (section != null) {
@@ -47,20 +46,20 @@ public class DatabaseMigration {
                         }
                     }
                 }
-                
+
                 if (!stats.isEmpty()) {
                     database.saveStatistics(stats).get();
-                    
+
                     File backupFile = new File(plugin.getDataFolder(), "statistics.yml.backup");
                     if (yamlFile.renameTo(backupFile)) {
-                        plugin.getLogger().info("Migration successful! Old statistics.yml backed up as statistics.yml.backup");
+                        plugin.log("Migration successful! Old statistics.yml backed up as statistics.yml.backup");
                     }
                     return true;
                 }
-                
+
                 return false;
             } catch (Exception e) {
-                plugin.getLogger().log(Level.SEVERE, "Failed to migrate from YAML", e);
+                plugin.log("Failed to migrate from YAML: " + e.getMessage());
                 return false;
             }
         });

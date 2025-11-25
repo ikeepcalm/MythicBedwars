@@ -15,9 +15,9 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 
 public class VotingListener implements Listener {
-    
+
     private final MythicBedwars plugin;
-    
+
     public VotingListener(MythicBedwars plugin) {
         this.plugin = plugin;
     }
@@ -43,31 +43,31 @@ public class VotingListener implements Listener {
         event.setCancelled(true);
         plugin.getVotingManager().getVotingGUI().openVotingGUI(player);
     }
-    
+
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
-        
+
         String title = plugin.getLocaleManager().getMessage("magic.voting.gui_title");
         if (!event.getView().getTitle().equals(title)) return;
-        
+
         event.setCancelled(true);
-        
+
         Arena arena = BedwarsAPI.getGameAPI().getArenaByPlayer(player);
         if (arena == null) return;
-        
+
         VotingSession session = plugin.getVotingManager().getVotingSession(arena.getName());
         if (session == null || !session.isActive()) {
             player.closeInventory();
             player.sendMessage(Component.text(plugin.getLocaleManager().getMessage("magic.voting.not_active"), NamedTextColor.RED));
             return;
         }
-        
+
         ItemStack clicked = event.getCurrentItem();
         if (clicked == null || !clicked.hasItemMeta()) return;
-        
+
         Material material = clicked.getType();
-        
+
         if (material == Material.LIME_WOOL) {
             session.castVote(player.getUniqueId(), true);
             player.sendMessage(Component.text(plugin.getLocaleManager().getMessage("magic.voting.voted_yes"), NamedTextColor.GREEN));

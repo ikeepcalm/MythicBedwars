@@ -3,7 +3,9 @@ package dev.ua.ikeepcalm.mythicBedwars.domain.runnable;
 import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
 import de.marcely.bedwars.api.arena.ArenaStatus;
-import dev.ua.ikeepcalm.coi.domain.beyonder.model.Beyonder;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
+import dev.ua.ikeepcalm.coi.api.model.PathwayData;
 import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
 import dev.ua.ikeepcalm.mythicBedwars.domain.core.PathwayManager;
 import org.bukkit.entity.Player;
@@ -12,9 +14,11 @@ import org.bukkit.scheduler.BukkitRunnable;
 public class ActingProgressionTask extends BukkitRunnable {
 
     private final MythicBedwars plugin;
+    private final CircleOfImaginationAPI circleOfImaginationAPI;
 
     public ActingProgressionTask(MythicBedwars plugin) {
         this.plugin = plugin;
+        this.circleOfImaginationAPI = plugin.getCircleOfImaginationAPI();
     }
 
     @Override
@@ -28,22 +32,23 @@ public class ActingProgressionTask extends BukkitRunnable {
                 PathwayManager.PlayerMagicData data = plugin.getArenaPathwayManager().getPlayerData(player);
                 if (data == null || !data.isActive()) continue;
 
-                Beyonder beyonder = Beyonder.of(player);
-                if (beyonder == null) continue;
+                if (!circleOfImaginationAPI.isBeyonder(player)) continue;
 
                 double multiplier = plugin.getConfigManager().getPassiveActingMultiplier();
                 int baseAmount = plugin.getConfigManager().getPassiveActingAmount();
 
-                int sequence = beyonder.getLowestSequenceNumber();
+                BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(player);
+
+                int sequence = beyonderData.lowestSequence();
                 double sequenceMultiplier = getSequenceMultiplier(sequence);
-                
+
                 long effectivePlayTime = data.getEffectivePlayTime();
                 double timeBasedMultiplier = getTimeBasedMultiplier(effectivePlayTime, sequence);
 
                 int actingAmount = (int) (baseAmount * multiplier * sequenceMultiplier * timeBasedMultiplier);
 
-                for (var pathway : beyonder.getPathways()) {
-                    pathway.addActing(actingAmount);
+                for (PathwayData pathway : beyonderData.pathways()) {
+                    circleOfImaginationAPI.addActing(player, pathway.name(), actingAmount);
                 }
             }
         }
@@ -70,7 +75,7 @@ public class ActingProgressionTask extends BukkitRunnable {
      */
     private double getTimeBasedMultiplier(long effectivePlayTimeMs, int sequence) {
         long playTimeMinutes = effectivePlayTimeMs / (1000 * 60);
-        
+
         // For higher sequences (9-7), provide additional boost for longer play time
         // This helps players who disconnect and reconnect maintain their fast progression
         if (sequence >= 7) {
@@ -97,7 +102,7 @@ public class ActingProgressionTask extends BukkitRunnable {
                 return 1.2;
             }
         }
-        
+
         return 1.0;
     }
 }

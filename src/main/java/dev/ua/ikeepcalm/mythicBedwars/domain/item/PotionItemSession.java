@@ -5,19 +5,23 @@ import de.marcely.bedwars.api.arena.Arena;
 import de.marcely.bedwars.api.arena.Team;
 import de.marcely.bedwars.api.event.player.PlayerUseSpecialItemEvent;
 import de.marcely.bedwars.api.game.specialitem.SpecialItemUseSession;
-import dev.ua.ikeepcalm.coi.domain.beyonder.model.Beyonder;
-import dev.ua.ikeepcalm.coi.domain.pathway.types.FlexiblePathway;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
+import dev.ua.ikeepcalm.coi.api.model.PathwayData;
 import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
 import dev.ua.ikeepcalm.mythicBedwars.domain.core.PathwayManager;
 import org.bukkit.entity.Player;
 
+import java.util.List;
+
 public class PotionItemSession extends SpecialItemUseSession {
 
     private final int sequence;
+    private final CircleOfImaginationAPI circleOfImaginationAPI;
 
     public PotionItemSession(PlayerUseSpecialItemEvent event, int sequence) {
         super(event);
         this.sequence = sequence;
+        this.circleOfImaginationAPI = MythicBedwars.getInstance().getCircleOfImaginationAPI();
     }
 
     @Override
@@ -56,23 +60,24 @@ public class PotionItemSession extends SpecialItemUseSession {
             return;
         }
 
-        Beyonder beyonder = Beyonder.of(player);
-        if (beyonder == null) return;
+        if (!circleOfImaginationAPI.isBeyonder(player)) return;
 
-        FlexiblePathway pathway = beyonder.getPathways().getFirst();
-        if (pathway == null) return;
+        List<PathwayData> pathwayData = circleOfImaginationAPI.getPathwayData(player);
 
-        if (sequence != pathway.getLowestSequenceLevel() - 1) {
+        if (pathwayData.isEmpty()) return;
+
+        if (sequence != pathwayData.getFirst().lowestSequenceLevel() - 1) {
             player.sendMessage(MythicBedwars.getInstance().getLocaleManager().formatMessage("magic.messages.wrong_potion"));
             return;
         }
 
-        if (pathway.getActing() != pathway.getNeededActing()) {
+        if (pathwayData.getFirst().acting() != pathwayData.getFirst().neededActing()) {
             player.sendMessage(MythicBedwars.getInstance().getLocaleManager().formatMessage("magic.messages.no_acting"));
             return;
         }
 
-        beyonder.consumePotion(pathway, sequence);
+        circleOfImaginationAPI.destroyBeyonder(player);
+        circleOfImaginationAPI.createBeyonder(player, pathwayData.getFirst().name(), sequence);
 
         if (MythicBedwars.getInstance().getStatisticsManager() != null) {
             MythicBedwars.getInstance().getStatisticsManager().recordSequenceReached(teamPathway, sequence);

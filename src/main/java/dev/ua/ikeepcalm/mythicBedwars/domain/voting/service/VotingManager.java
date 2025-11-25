@@ -2,8 +2,8 @@ package dev.ua.ikeepcalm.mythicBedwars.domain.voting.service;
 
 import de.marcely.bedwars.api.arena.Arena;
 import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
-import dev.ua.ikeepcalm.mythicBedwars.gui.VotingGUI;
 import dev.ua.ikeepcalm.mythicBedwars.domain.voting.model.VotingSession;
+import dev.ua.ikeepcalm.mythicBedwars.gui.VotingGUI;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -31,8 +31,8 @@ public class VotingManager {
 
     public void startVoting(Arena arena) {
         if (!plugin.getConfigManager().isGloballyEnabled() ||
-                !plugin.getConfigManager().isArenaEnabled(arena.getName()) ||
-                !plugin.getConfigManager().isVotingEnabled()) {
+            !plugin.getConfigManager().isArenaEnabled(arena.getName()) ||
+            !plugin.getConfigManager().isVotingEnabled()) {
             log.info("Voting skipped for arena {} - voting or plugin disabled", arena.getName());
             votingResults.put(arena.getName(), true);
             return;

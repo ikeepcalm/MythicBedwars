@@ -161,7 +161,8 @@ public class CommandManager implements CommandExecutor, TabCompleter {
                     sender.sendMessage(Component.text("Pathway " + pathway + " is already disabled", NamedTextColor.YELLOW));
                 }
             }
-            default -> sender.sendMessage(Component.text("Usage: /mb pathways <enable|disable> <pathway>", NamedTextColor.RED));
+            default ->
+                    sender.sendMessage(Component.text("Usage: /mb pathways <enable|disable> <pathway>", NamedTextColor.RED));
         }
     }
 

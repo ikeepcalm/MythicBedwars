@@ -4,11 +4,13 @@ plugins {
 }
 
 group = 'dev.ua.ikeepcalm'
-version = '1.0-SNAPSHOT'
+version = '1.0.0'
 
 repositories {
-    mavenLocal()
     mavenCentral()
+    maven {
+        url = "https://nexus.mysterria.net/repository/plugin-public/"
+    }
     maven {
         name = "papermc-repo"
         url = "https://repo.papermc.io/repository/maven-public/"
@@ -26,9 +28,9 @@ repositories {
 dependencies {
     implementation 'com.github.plan-player-analytics:Plan:5.6.2965'
     implementation("org.xerial:sqlite-jdbc:3.49.1.0")
-    compileOnly("io.papermc.paper:paper-api:1.21.4-R0.1-SNAPSHOT")
-    compileOnly 'de.marcely.bedwars:API:5.5.3'
-    compileOnly 'dev.ua.ikeepcalm:CircleOfImagination:1.1.9-SNAPSHOT'
+    compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
+    compileOnly 'de.marcely.bedwars:API:5.5.5'
+    compileOnly 'dev.ua.ikeepcalm:circle-of-imagination-api:1.2.8-SNAPSHOT'
 }
 
 tasks {

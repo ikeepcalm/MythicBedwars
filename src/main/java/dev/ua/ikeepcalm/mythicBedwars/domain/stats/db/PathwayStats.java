@@ -43,9 +43,9 @@ public class PathwayStats implements Serializable, ConfigurationSerializable {
     double getAverageGameDuration() {
         if (gameDurations.isEmpty()) return 0;
         return gameDurations.stream()
-                .mapToLong(Long::longValue)
-                .average()
-                .orElse(0.0) / 1000 / 60;
+                       .mapToLong(Long::longValue)
+                       .average()
+                       .orElse(0.0) / 1000 / 60;
     }
 
     public String getMostUsedAbility() {

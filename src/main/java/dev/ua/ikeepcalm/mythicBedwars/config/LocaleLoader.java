@@ -46,7 +46,9 @@ public class LocaleLoader {
                 }
 
                 locales.put(Locale.valueOf(localeName.toUpperCase()), config);
-                plugin.getLogger().info("Loaded locale: " + localeName);
+                if (plugin instanceof dev.ua.ikeepcalm.mythicBedwars.MythicBedwars mythicBedwars) {
+                    mythicBedwars.log("Loaded locale: " + localeName);
+                }
             }
         }
     }

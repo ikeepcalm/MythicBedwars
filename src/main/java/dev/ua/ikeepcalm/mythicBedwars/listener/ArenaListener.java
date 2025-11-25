@@ -12,7 +12,8 @@ import de.marcely.bedwars.api.event.player.PlayerJoinArenaEvent;
 import de.marcely.bedwars.api.event.player.PlayerKillPlayerEvent;
 import de.marcely.bedwars.api.event.player.PlayerQuitArenaEvent;
 import de.marcely.bedwars.api.event.player.PlayerTeamChangeEvent;
-import dev.ua.ikeepcalm.coi.domain.beyonder.model.Beyonder;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
+import dev.ua.ikeepcalm.coi.api.model.PathwayData;
 import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -21,16 +22,20 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class ArenaListener implements Listener {
 
     private static final Logger log = LoggerFactory.getLogger(ArenaListener.class);
+
     private final MythicBedwars plugin;
     private final Map<String, Long> arenaStartTimes = new HashMap<>();
+    private final CircleOfImaginationAPI circleOfImaginationAPI;
 
     public ArenaListener(MythicBedwars plugin) {
         this.plugin = plugin;
+        this.circleOfImaginationAPI = plugin.getCircleOfImaginationAPI();
     }
 
     @EventHandler
@@ -147,11 +152,11 @@ public class ArenaListener implements Listener {
         }
 
         boolean isGameEnding = event.getReason() == KickReason.GAME_LOSE
-                || event.getReason() == KickReason.GAME_END
-                || event.getReason() == KickReason.ARENA_STOP;
+                               || event.getReason() == KickReason.GAME_END
+                               || event.getReason() == KickReason.ARENA_STOP;
 
         boolean isVoluntaryLeave = event.getReason() == KickReason.LEAVE
-                || event.getReason() == KickReason.PLUGIN_STOP;
+                                   || event.getReason() == KickReason.PLUGIN_STOP;
 
         if (isGameEnding || isVoluntaryLeave || arena.getStatus() != ArenaStatus.RUNNING) {
             plugin.getArenaPathwayManager().cleanupPlayer(player);
@@ -179,8 +184,7 @@ public class ArenaListener implements Listener {
         Arena arena = event.getArena();
         if (!plugin.getVotingManager().isMagicEnabled(arena.getName())) return;
 
-        Beyonder beyonder = Beyonder.of(killer);
-        if (beyonder == null) return;
+        if (!circleOfImaginationAPI.isBeyonder(killer)) return;
 
         double multiplier = event.isFatalDeath() ?
                 plugin.getConfigManager().getFinalKillActingMultiplier() :
@@ -188,8 +192,10 @@ public class ArenaListener implements Listener {
 
         int actingAmount = (int) (100 * multiplier);
 
-        for (var pathway : beyonder.getPathways()) {
-            pathway.addActing(actingAmount);
+        List<PathwayData> pathwayData = circleOfImaginationAPI.getPathwayData(killer);
+
+        for (PathwayData pathway : pathwayData) {
+            circleOfImaginationAPI.addActing(killer, pathway.name(), actingAmount);
         }
     }
 
@@ -201,14 +207,16 @@ public class ArenaListener implements Listener {
         Arena arena = event.getArena();
         if (!plugin.getVotingManager().isMagicEnabled(arena.getName())) return;
 
-        Beyonder beyonder = Beyonder.of(breaker);
-        if (beyonder == null) return;
+        if (!circleOfImaginationAPI.isBeyonder(breaker)) return;
 
         double multiplier = plugin.getConfigManager().getBedBreakActingMultiplier();
         int actingAmount = (int) (100 * multiplier);
 
-        for (var pathway : beyonder.getPathways()) {
-            pathway.addActing(actingAmount);
+        List<PathwayData> pathwayData = circleOfImaginationAPI.getPathwayData(breaker);
+
+        for (PathwayData pathway : pathwayData) {
+            circleOfImaginationAPI.addActing(breaker, pathway.name(), actingAmount);
         }
+
     }
 }

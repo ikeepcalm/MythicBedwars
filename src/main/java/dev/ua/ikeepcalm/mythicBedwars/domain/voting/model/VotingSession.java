@@ -16,9 +16,9 @@ public class VotingSession {
     private final Arena arena;
     private final MythicBedwars plugin;
     private final Map<UUID, Boolean> votes = new ConcurrentHashMap<>();
+    private final VotingReminderTask reminderTask;
     private boolean active = false;
     private boolean magicEnabled = true;
-    private VotingReminderTask reminderTask;
 
     public VotingSession(Arena arena, MythicBedwars plugin) {
         this.arena = arena;
@@ -78,11 +78,7 @@ public class VotingSession {
             magicEnabled = false;
         } else {
             double yesPercentageOfVoters = (double) yesVotes / totalVotes;
-            if (yesPercentageOfVoters >= 0.5) {
-                magicEnabled = true;
-            } else {
-                magicEnabled = false;
-            }
+            magicEnabled = yesPercentageOfVoters >= 0.5;
         }
 
         if (magicEnabled) {

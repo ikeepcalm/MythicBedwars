@@ -4,7 +4,8 @@ import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
 import de.marcely.bedwars.api.arena.ArenaStatus;
 import de.marcely.bedwars.api.arena.Team;
-import dev.ua.ikeepcalm.coi.domain.beyonder.model.Beyonder;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
 import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
 import dev.ua.ikeepcalm.mythicBedwars.domain.core.PathwayManager;
 import org.bukkit.entity.Player;
@@ -15,10 +16,13 @@ import org.slf4j.LoggerFactory;
 public class PathwayVerificationTask extends BukkitRunnable {
 
     private static final Logger log = LoggerFactory.getLogger(PathwayVerificationTask.class);
+
     private final MythicBedwars plugin;
+    private final CircleOfImaginationAPI circleOfImaginationAPI;
 
     public PathwayVerificationTask(MythicBedwars plugin) {
         this.plugin = plugin;
+        this.circleOfImaginationAPI = plugin.getCircleOfImaginationAPI();
     }
 
     @Override
@@ -60,13 +64,14 @@ public class PathwayVerificationTask extends BukkitRunnable {
             log.info("Fixed pathway for player {}: now has {}", player.getName(), teamPathway);
         }
 
-        Beyonder beyonder = Beyonder.of(player);
-        if (beyonder == null) {
+        BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(player);
+
+        if (beyonderData == null) {
             log.info("Player {} has magic data but no Beyonder instance, reinitializing", player.getName());
             plugin.getArenaPathwayManager().initializePlayerMagic(player, arena, team);
-        } else if (beyonder.getPathways().isEmpty() || !beyonder.getPathways().getFirst().getName().equals(teamPathway)) {
+        } else if (beyonderData.pathways().isEmpty() || !beyonderData.pathways().getFirst().name().equals(teamPathway)) {
             log.info("Player {} has incorrect Beyonder pathway, reinitializing", player.getName());
-            beyonder.destroy();
+            circleOfImaginationAPI.destroyBeyonder(player);
             plugin.getArenaPathwayManager().initializePlayerMagic(player, arena, team);
         }
     }

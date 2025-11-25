@@ -2,18 +2,17 @@ package dev.ua.ikeepcalm.mythicBedwars.listener;
 
 import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
-import dev.ua.ikeepcalm.coi.api.events.AbilityUsageEvent;
-import dev.ua.ikeepcalm.coi.api.events.MagicBlockEvent;
-import dev.ua.ikeepcalm.coi.domain.beyonder.model.Beyonder;
-import dev.ua.ikeepcalm.coi.domain.pathway.types.FlexiblePathway;
-import dev.ua.ikeepcalm.coi.domain.potion.model.SequencePotion;
-import dev.ua.ikeepcalm.coi.pathways.darkness.abilities.nightmare.Nightmare;
-import dev.ua.ikeepcalm.coi.pathways.demoness.abilities.ThreadHands;
-import dev.ua.ikeepcalm.coi.pathways.door.abilities.TravelersDoor;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
+import dev.ua.ikeepcalm.coi.api.event.AbilityUsageEvent;
+import dev.ua.ikeepcalm.coi.api.event.MagicBlockEvent;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
+import dev.ua.ikeepcalm.coi.api.model.PathwayData;
 import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
+import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -21,6 +20,7 @@ import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
@@ -29,9 +29,11 @@ import java.util.List;
 public class PlayerListener implements Listener {
 
     private final MythicBedwars plugin;
+    private final CircleOfImaginationAPI circleOfImaginationAPI;
 
     public PlayerListener(MythicBedwars plugin) {
         this.plugin = plugin;
+        this.circleOfImaginationAPI = plugin.getCircleOfImaginationAPI();
     }
 
     @EventHandler
@@ -53,8 +55,10 @@ public class PlayerListener implements Listener {
             return;
         }
 
-        List<Class<?>> blockedAbilities = List.of(ThreadHands.class, Nightmare.class, TravelersDoor.class);
-        if (blockedAbilities.stream().anyMatch(clazz -> clazz.isInstance(event.getAbility()))) {
+        String abilityName = event.getAbility().plainName();
+
+        List<String> blockedAbilities = List.of("thread-hands", "nightmare", "travelers-door");
+        if (blockedAbilities.stream().anyMatch(abilityName::equalsIgnoreCase)) {
             event.setCancelled(true);
         }
     }
@@ -90,7 +94,12 @@ public class PlayerListener implements Listener {
         ItemMeta meta = item.getItemMeta();
         if (meta == null) return;
 
-        if (meta.getPersistentDataContainer().has(SequencePotion.getPotionKey(), PersistentDataType.INTEGER)) {
+        Plugin coiPlugin = Bukkit.getPluginManager().getPlugin("CircleOfImagination");
+        if (coiPlugin == null) return;
+
+        NamespacedKey potionKey = new NamespacedKey(plugin, "sequence_potion");
+
+        if (meta.getPersistentDataContainer().has(potionKey, PersistentDataType.INTEGER)) {
             if (!plugin.getVotingManager().isMagicEnabled(arena.getName())) {
                 event.setCancelled(true);
                 return;
@@ -101,11 +110,12 @@ public class PlayerListener implements Listener {
                 return;
             }
 
-            Beyonder beyonder = Beyonder.of(player);
-            if (beyonder != null && !beyonder.getPathways().isEmpty()) {
-                FlexiblePathway currentPathway = beyonder.getPathways().getFirst();
+            BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(player);
 
-                if (!currentPathway.getName().equals(plugin.getArenaPathwayManager().getPlayerData(player).getPathway())) {
+            if (beyonderData != null && !beyonderData.pathways().isEmpty()) {
+                PathwayData currentPathway = beyonderData.pathways().getFirst();
+
+                if (!currentPathway.name().equals(plugin.getArenaPathwayManager().getPlayerData(player).getPathway())) {
                     event.setCancelled(true);
                 }
             }
