@@ -18,16 +18,12 @@ import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 public class ArenaListener implements Listener {
-
-    private static final Logger log = LoggerFactory.getLogger(ArenaListener.class);
 
     private final MythicBedwars plugin;
     private final Map<String, Long> arenaStartTimes = new HashMap<>();
@@ -42,11 +38,11 @@ public class ArenaListener implements Listener {
     public void onArenaStatusChange(ArenaStatusChangeEvent event) {
         Arena arena = event.getArena();
 
-        log.info("Arena status change: {} -> {}", event.getOldStatus(), event.getNewStatus());
+        MythicBedwars.getInstance().log("Arena status change: " + event.getOldStatus() + " -> " + event.getNewStatus());
 
         if (event.getNewStatus() == ArenaStatus.LOBBY && event.getOldStatus() != ArenaStatus.LOBBY) {
             if (plugin.getConfigManager().isGloballyEnabled() && plugin.getConfigManager().isArenaEnabled(arena.getName())) {
-                log.info("Starting voting for arena: {}", arena.getName());
+                MythicBedwars.getInstance().log("Starting voting for arena: " + arena.getName());
                 plugin.getVotingManager().startVoting(arena);
             }
         }
@@ -56,7 +52,7 @@ public class ArenaListener implements Listener {
             plugin.getVotingManager().endVoting(arena);
 
             if (plugin.getVotingManager().isMagicEnabled(arena.getName())) {
-                log.info("Magic is enabled for arena: {}, assigning pathways", arena.getName());
+                MythicBedwars.getInstance().log("Magic is enabled for arena: " + arena.getName() + ", assigning pathways");
                 plugin.getArenaPathwayManager().assignPathwaysToTeams(arena);
 
                 for (Player player : arena.getPlayers()) {
@@ -64,18 +60,17 @@ public class ArenaListener implements Listener {
                     if (team != null) {
                         plugin.getArenaPathwayManager().initializePlayerMagic(player, arena, team);
                     } else {
-                        log.debug("Player {} has no team at game start, scheduling delayed magic initialization", player.getName());
                         org.bukkit.Bukkit.getScheduler().runTaskLater(plugin, () -> {
                             Team delayedTeam = arena.getPlayerTeam(player);
                             if (delayedTeam != null && plugin.getVotingManager().isMagicEnabled(arena.getName())) {
-                                log.info("Initializing delayed magic for player {} on team {}", player.getName(), delayedTeam.getDisplayName());
+                                MythicBedwars.getInstance().log("Initializing delayed magic for player " + player.getName() + " on team " + delayedTeam.getDisplayName());
                                 plugin.getArenaPathwayManager().initializePlayerMagic(player, arena, delayedTeam);
                             }
                         }, 20L);
                     }
                 }
             } else {
-                log.info("Magic is disabled for arena: {}, skipping pathway assignment", arena.getName());
+                MythicBedwars.getInstance().log("Magic is disabled for arena: " + arena.getName() + ", skipping pathway assignment");
             }
         }
 
@@ -113,15 +108,15 @@ public class ArenaListener implements Listener {
         Player player = event.getPlayer();
         Arena arena = event.getArena();
 
-        log.info("Player {} joined arena {} with status: {}", player.getName(), arena.getName(), arena.getStatus());
+        MythicBedwars.getInstance().log("Player " + player.getName() + " joined arena " + arena.getName() + " with status: " + arena.getStatus());
 
         if (arena.getStatus() == ArenaStatus.LOBBY) {
             if (plugin.getVotingManager().hasActiveVoting(arena.getName())) {
-                log.info("Giving voting items to late-joining player: {}", player.getName());
+                MythicBedwars.getInstance().log("Giving voting items to late-joining player: " + player.getName());
                 plugin.getVotingManager().giveVotingItems(player, arena);
             } else if (plugin.getConfigManager().isGloballyEnabled() && plugin.getConfigManager().isArenaEnabled(arena.getName())) {
                 if (!plugin.getVotingManager().hasActiveVoting(arena.getName())) {
-                    log.info("First player joined, starting voting for arena: {}", arena.getName());
+                    MythicBedwars.getInstance().log("First player joined, starting voting for arena: " + arena.getName());
                     plugin.getVotingManager().startVoting(arena);
                     plugin.getVotingManager().giveVotingItems(player, arena);
                 }

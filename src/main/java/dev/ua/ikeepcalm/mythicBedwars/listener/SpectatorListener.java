@@ -15,6 +15,8 @@ import org.bukkit.event.player.PlayerGameModeChangeEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
+import java.util.Collection;
+
 public class SpectatorListener implements Listener {
 
     private final MythicBedwars plugin;
@@ -58,13 +60,18 @@ public class SpectatorListener implements Listener {
 
         if (arena == null) return;
 
-        if (event.getNewGameMode() == GameMode.SPECTATOR) {
-            if (!plugin.getSpectatorManager().isSpectating(player)) {
-                plugin.getSpectatorManager().addSpectator(player, arena);
-            }
-        } else {
-            if (plugin.getSpectatorManager().isSpectating(player)) {
-                plugin.getSpectatorManager().removeSpectator(player);
+
+        Collection<Player> spectatingPlayer = BedwarsAPI.getGameAPI().getSpectatingPlayers();
+
+        if (spectatingPlayer.contains(player)) {
+            if (event.getNewGameMode() == GameMode.SPECTATOR) {
+                if (!plugin.getSpectatorManager().isSpectating(player)) {
+                    plugin.getSpectatorManager().addSpectator(player, arena);
+                }
+            } else {
+                if (plugin.getSpectatorManager().isSpectating(player)) {
+                    plugin.getSpectatorManager().removeSpectator(player);
+                }
             }
         }
     }

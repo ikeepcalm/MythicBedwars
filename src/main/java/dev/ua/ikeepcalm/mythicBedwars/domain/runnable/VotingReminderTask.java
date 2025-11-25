@@ -14,12 +14,14 @@ import java.util.UUID;
 
 public class VotingReminderTask extends BukkitRunnable {
 
+    private final MythicBedwars plugin;
     private final Arena arena;
     private final VotingSession session;
     private final int maxReminders;
     private int reminderCount = 0;
 
     public VotingReminderTask(MythicBedwars plugin, Arena arena, VotingSession session) {
+        this.plugin = plugin;
         this.arena = arena;
         this.session = session;
         this.maxReminders = plugin.getConfigManager().getMaxVotingReminders();
@@ -48,14 +50,17 @@ public class VotingReminderTask extends BukkitRunnable {
 
     private void sendVotingReminder(Player player) {
         if (reminderCount % 2 == 0) {
+            Component titleComponent = plugin.getLocaleManager().formatMessage("magic.voting.reminder_title");
+            Component subtitleComponent = plugin.getLocaleManager().formatMessage("magic.voting.reminder_subtitle");
+
             Title title = Title.title(
-                    Component.text("Голосування!", NamedTextColor.YELLOW),
-                    Component.text("Клікніть на зелений або червоний барвник!", NamedTextColor.GRAY),
+                    titleComponent,
+                    subtitleComponent,
                     Title.Times.times(Duration.ofMillis(500), Duration.ofSeconds(3), Duration.ofMillis(500))
             );
             player.showTitle(title);
         } else {
-            player.sendMessage(Component.text("⚡ Не забудьте проголосувати за магію!", NamedTextColor.YELLOW));
+            player.sendMessage(plugin.getLocaleManager().formatMessage("magic.voting.reminder_message"));
         }
 
         player.playSound(player.getLocation(), org.bukkit.Sound.BLOCK_NOTE_BLOCK_PLING, 0.5f, 1.0f);

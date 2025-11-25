@@ -36,7 +36,7 @@ public class VotingListener implements Listener {
         if (arena == null) return;
 
         if (!plugin.getVotingManager().hasActiveVoting(arena.getName())) {
-            player.sendMessage(Component.text(plugin.getLocaleManager().getMessage("magic.voting.not_active"), NamedTextColor.RED));
+            player.sendMessage(plugin.getLocaleManager().formatMessage("magic.voting.not_active"));
             return;
         }
 
@@ -48,8 +48,8 @@ public class VotingListener implements Listener {
     public void onInventoryClick(InventoryClickEvent event) {
         if (!(event.getWhoClicked() instanceof Player player)) return;
 
-        String title = plugin.getLocaleManager().getMessage("magic.voting.gui_title");
-        if (!event.getView().getTitle().equals(title)) return;
+        Component title = plugin.getLocaleManager().formatMessage("magic.voting.gui_title");
+        if (!event.getView().title().equals(title)) return;
 
         event.setCancelled(true);
 
@@ -59,7 +59,7 @@ public class VotingListener implements Listener {
         VotingSession session = plugin.getVotingManager().getVotingSession(arena.getName());
         if (session == null || !session.isActive()) {
             player.closeInventory();
-            player.sendMessage(Component.text(plugin.getLocaleManager().getMessage("magic.voting.not_active"), NamedTextColor.RED));
+            player.sendMessage(plugin.getLocaleManager().formatMessage("magic.voting.not_active"));
             return;
         }
 
@@ -70,12 +70,12 @@ public class VotingListener implements Listener {
 
         if (material == Material.LIME_WOOL) {
             session.castVote(player.getUniqueId(), true);
-            player.sendMessage(Component.text(plugin.getLocaleManager().getMessage("magic.voting.voted_yes"), NamedTextColor.GREEN));
+            player.sendMessage(plugin.getLocaleManager().formatMessage("magic.voting.voted_yes"));
             player.closeInventory();
             // plugin.getVotingManager().getVotingGUI().openVotingGUI(player);
         } else if (material == Material.RED_WOOL) {
             session.castVote(player.getUniqueId(), false);
-            player.sendMessage(Component.text(plugin.getLocaleManager().getMessage("magic.voting.voted_no"), NamedTextColor.RED));
+            player.sendMessage(plugin.getLocaleManager().formatMessage("magic.voting.voted_no"));
             player.closeInventory();
             // plugin.getVotingManager().getVotingGUI().openVotingGUI(player);
         }

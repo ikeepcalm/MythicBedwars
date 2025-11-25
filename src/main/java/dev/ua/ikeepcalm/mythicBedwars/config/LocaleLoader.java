@@ -1,5 +1,7 @@
 package dev.ua.ikeepcalm.mythicBedwars.config;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -29,7 +31,7 @@ public class LocaleLoader {
             langFolder.mkdirs();
         }
 
-        //saveDefaultLocale("lang-en.yml");
+        saveDefaultLocale("lang-en.yml");
         saveDefaultLocale("lang-uk.yml");
 
         File[] localeFiles = langFolder.listFiles((dir, name) -> name.startsWith("lang-") && name.endsWith(".yml"));
@@ -81,11 +83,11 @@ public class LocaleLoader {
         return message;
     }
 
-    public String formatMessage(String key, Object... args) {
+    public Component formatMessage(String key, Object... args) {
         return formatMessage(key, defaultLocale, args);
     }
 
-    public String formatMessage(String key, Locale locale, Object... args) {
+    public Component formatMessage(String key, Locale locale, Object... args) {
         String message = getMessage(key, locale);
         for (int i = 0; i < args.length; i += 2) {
             if (i + 1 < args.length) {
@@ -94,11 +96,11 @@ public class LocaleLoader {
                 message = message.replace(placeholder, value);
             }
         }
-        return message;
+        return LegacyComponentSerializer.legacyAmpersand().deserialize(message);
     }
 
     public enum Locale {
-        // EN,
+         EN,
         UK
     }
 }

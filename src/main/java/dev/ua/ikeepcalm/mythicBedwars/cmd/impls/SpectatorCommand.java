@@ -31,12 +31,12 @@ public class SpectatorCommand implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(Component.text(plugin.getLocaleManager().getMessage("magic.commands.player_only"), NamedTextColor.RED));
+            sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.player_only"));
             return true;
         }
 
         if (!player.hasPermission("mythicbedwars.spectator")) {
-            sender.sendMessage(Component.text(plugin.getLocaleManager().getMessage("magic.commands.no_permission"), NamedTextColor.RED));
+            sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.no_permission"));
             return true;
         }
 

@@ -41,6 +41,9 @@ magic:
     no_votes: "❌ ПРОТИ: {votes}"
     majority_wins: "Перемагає більшість голосів"
     selected: "➤ ОБРАНО"
+    reminder_title: "&eГолосування!"
+    reminder_subtitle: "&7Клікніть на зелений або червоний барвник!"
+    reminder_message: "&e⚡ Не забудьте проголосувати за магію!"
   spectator:
     welcome: "=== Магічний Режим Спостерігача ==="
     commands_help: "Використовуйте /mbspec для налаштування досвіду спостереження!"

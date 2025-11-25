@@ -165,7 +165,7 @@ public class SpectatorManager {
         Component title = Component.text(currentTeam.getDisplayName(), teamColor)
                 .append(Component.text(" (", NamedTextColor.GRAY))
                 .append(Component.text(pathway, NamedTextColor.LIGHT_PURPLE))
-                .append(Component.text(") - Avg Seq: ", NamedTextColor.GRAY))
+                .append(Component.text(") - Avg Sequence: ", NamedTextColor.GRAY))
                 .append(Component.text(String.format("%.1f", 9 - avgSequence), NamedTextColor.YELLOW))
                 .append(Component.text(" | Acting: ", NamedTextColor.GRAY))
                 .append(Component.text(String.format("%.0f%%", avgActingPercent), NamedTextColor.GREEN));
@@ -208,7 +208,7 @@ public class SpectatorManager {
         return Component.text(player.getName(), teamColor)
                 .append(Component.text(" | ", NamedTextColor.GRAY))
                 .append(Component.text(pathway, NamedTextColor.LIGHT_PURPLE))
-                .append(Component.text(" Seq:", NamedTextColor.GRAY))
+                .append(Component.text(" Sequence:", NamedTextColor.GRAY))
                 .append(Component.text(String.valueOf(sequence), getSequenceColor(sequence)))
                 .append(Component.text(" | Acting:", NamedTextColor.GRAY))
                 .append(Component.text(String.format("%.0f%%", actingPercent), getActingColor(actingPercent)));

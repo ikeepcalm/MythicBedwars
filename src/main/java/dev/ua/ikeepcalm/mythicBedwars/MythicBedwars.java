@@ -105,7 +105,7 @@ public final class MythicBedwars extends JavaPlugin {
 
         this.saveIntervalSeconds = configLoader.getAutoSaveInterval();
 
-        localeLoader = new LocaleLoader(this, LocaleLoader.Locale.UK);
+        localeLoader = new LocaleLoader(this, LocaleLoader.Locale.EN);
         localeLoader.loadLocales();
 
         pathwayManager = new PathwayManager();
@@ -129,12 +129,12 @@ public final class MythicBedwars extends JavaPlugin {
         Objects.requireNonNull(getCommand("mbspec")).setExecutor(spectatorCommand);
         Objects.requireNonNull(getCommand("mbspec")).setTabCompleter(spectatorCommand);
 
+        registerEvents();
+        registerShopItems();
+
         statisticsManager = new StatisticsManager(this);
 
         CompletableFuture<Void> loadingFuture = loadStatistics().thenRun(() -> {
-            registerEvents();
-            registerShopItems();
-
             Bukkit.getScheduler().runTask(this, this::registerPlanStatistics);
 
             new ActingProgressionTask(this).runTaskTimer(this, 20L, 20L);
@@ -296,10 +296,21 @@ public final class MythicBedwars extends JavaPlugin {
         }
     }
 
+    public void log(String message, Object... objects) {
+        if (message == null) return;
+        String formatted = message;
+        if (objects != null) {
+            for (Object obj : objects) {
+                String replacement = obj == null ? "null" : obj.toString();
+                formatted = formatted.replaceFirst("\\{\\}", java.util.regex.Matcher.quoteReplacement(replacement));
+            }
+        }
+        Bukkit.getConsoleSender().sendMessage(Component.text("[MythicBedwars]").color(NamedTextColor.LIGHT_PURPLE).append(Component.text(" " + formatted)));
+    }
+
     public void log(String message) {
         Bukkit.getConsoleSender().sendMessage(Component.text("[MythicBedwars]").color(NamedTextColor.LIGHT_PURPLE).append(Component.text(" " + message)));
     }
-
 
     public PathwayBalancer getPathwayBalancer() {
         return pathwayBalancer;

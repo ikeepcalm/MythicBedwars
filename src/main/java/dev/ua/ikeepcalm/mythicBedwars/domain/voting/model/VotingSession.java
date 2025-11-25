@@ -45,11 +45,11 @@ public class VotingSession {
         int yesVotes = (int) votes.values().stream().filter(vote -> vote).count();
         int noVotes = votes.size() - yesVotes;
 
-        String statusMessage = plugin.getLocaleManager().formatMessage("magic.voting.status",
+        Component statusMessage = plugin.getLocaleManager().formatMessage("magic.voting.status",
                 "yes", yesVotes, "no", noVotes, "total", totalPlayers);
 
         for (Player player : arena.getPlayers()) {
-            player.sendMessage(Component.text(statusMessage, NamedTextColor.AQUA));
+            player.sendMessage(statusMessage.color(NamedTextColor.AQUA));
         }
     }
 
@@ -87,24 +87,24 @@ public class VotingSession {
             broadcastMessage("magic.voting.magic_disabled", NamedTextColor.RED);
         }
 
-        String resultMessage = plugin.getLocaleManager().formatMessage("magic.voting.final_result",
+        Component resultMessage = plugin.getLocaleManager().formatMessage("magic.voting.final_result",
                 "yes", yesVotes, "no", noVotes);
 
         for (Player player : arena.getPlayers()) {
-            player.sendMessage(Component.text(resultMessage, NamedTextColor.GOLD));
+            player.sendMessage(resultMessage.color(NamedTextColor.GOLD));
         }
 
-        String participationMessage = plugin.getLocaleManager().formatMessage("magic.voting.participation",
+        Component participationMessage = plugin.getLocaleManager().formatMessage("magic.voting.participation",
                 "voted", totalVotes, "total", totalPlayers);
         for (Player player : arena.getPlayers()) {
-            player.sendMessage(Component.text(participationMessage, NamedTextColor.AQUA));
+            player.sendMessage(participationMessage.color(NamedTextColor.AQUA));
         }
     }
 
     private void broadcastMessage(String key, NamedTextColor color) {
-        String message = plugin.getLocaleManager().getMessage(key);
+        Component message = plugin.getLocaleManager().formatMessage(key);
         for (Player player : arena.getPlayers()) {
-            player.sendMessage(Component.text(message, color));
+            player.sendMessage(message.color(color));
         }
     }
 

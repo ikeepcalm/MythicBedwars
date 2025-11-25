@@ -32,32 +32,26 @@ public class VotingGUI {
 
         VotingSession session = plugin.getVotingManager().getVotingSession(arena.getName());
         if (session == null || !session.isActive()) {
-            player.sendMessage(Component.text(plugin.getLocaleManager().getMessage("magic.voting.not_active"), NamedTextColor.RED));
+            player.sendMessage(plugin.getLocaleManager().formatMessage("magic.voting.not_active"));
             return;
         }
 
-        String title = plugin.getLocaleManager().getMessage("magic.voting.gui_title");
-        Inventory gui = Bukkit.createInventory(null, 27, Component.text(title));
+        Component title = plugin.getLocaleManager().formatMessage("magic.voting.gui_title");
+        Inventory gui = Bukkit.createInventory(null, 27, title);
 
         fillBorder(gui);
 
         ItemStack yesItem = createVoteItem(Material.LIME_WOOL,
-                plugin.getLocaleManager().getMessage("magic.voting.enable_magic"),
-                Arrays.asList(
-                        plugin.getLocaleManager().getMessage("magic.voting.enable_description"),
-                        "",
-                        plugin.getLocaleManager().formatMessage("magic.voting.current_votes", "votes", session.getYesVotes())
-                ),
+                plugin.getLocaleManager().formatMessage("magic.voting.enable_magic"),
+                plugin.getLocaleManager().formatMessage("magic.voting.enable_description"),
+                plugin.getLocaleManager().formatMessage("magic.voting.current_votes", "votes", session.getYesVotes()),
                 session.hasVoted(player.getUniqueId()) && session.getVote(player.getUniqueId())
         );
 
         ItemStack noItem = createVoteItem(Material.RED_WOOL,
-                plugin.getLocaleManager().getMessage("magic.voting.disable_magic"),
-                Arrays.asList(
-                        plugin.getLocaleManager().getMessage("magic.voting.disable_description"),
-                        "",
-                        plugin.getLocaleManager().formatMessage("magic.voting.current_votes", "votes", session.getNoVotes())
-                ),
+                plugin.getLocaleManager().formatMessage("magic.voting.disable_magic"),
+                plugin.getLocaleManager().formatMessage("magic.voting.disable_description"),
+                plugin.getLocaleManager().formatMessage("magic.voting.current_votes", "votes", session.getNoVotes()),
                 session.hasVoted(player.getUniqueId()) && !session.getVote(player.getUniqueId())
         );
 
@@ -86,21 +80,21 @@ public class VotingGUI {
         gui.setItem(17, border);
     }
 
-    private ItemStack createVoteItem(Material material, String name, List<String> lore, boolean selected) {
+    private ItemStack createVoteItem(Material material, Component name, Component description, Component votesLine, boolean selected) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
 
         NamedTextColor nameColor = selected ? NamedTextColor.GREEN : NamedTextColor.WHITE;
-        meta.displayName(Component.text(name, nameColor).decoration(TextDecoration.ITALIC, false));
+        meta.displayName(name.color(nameColor).decoration(TextDecoration.ITALIC, false));
 
-        List<TextComponent> loreComponents = lore.stream()
-                .map(line -> Component.text(line, NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false))
-                .toList();
+        List<Component> loreComponents = new java.util.ArrayList<>();
+        loreComponents.add(description.color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
+        loreComponents.add(Component.empty());
+        loreComponents.add(votesLine.color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false));
 
         if (selected) {
-            loreComponents = new java.util.ArrayList<>(loreComponents);
             loreComponents.add(Component.empty());
-            loreComponents.add(Component.text(plugin.getLocaleManager().getMessage("magic.voting.selected"), NamedTextColor.GREEN).decoration(TextDecoration.ITALIC, false));
+            loreComponents.add(plugin.getLocaleManager().formatMessage("magic.voting.selected").color(NamedTextColor.GREEN).decoration(TextDecoration.ITALIC, false));
         }
 
         meta.lore(loreComponents);
@@ -113,13 +107,13 @@ public class VotingGUI {
         ItemStack item = new ItemStack(Material.BOOK);
         ItemMeta meta = item.getItemMeta();
 
-        meta.displayName(Component.text(plugin.getLocaleManager().getMessage("magic.voting.vote_info"), NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false));
+        meta.displayName(plugin.getLocaleManager().formatMessage("magic.voting.vote_info").color(NamedTextColor.YELLOW).decoration(TextDecoration.ITALIC, false));
 
         List<Component> lore = Arrays.asList(
-                Component.text(plugin.getLocaleManager().formatMessage("magic.voting.yes_votes", "votes", session.getYesVotes()), NamedTextColor.GREEN).decoration(TextDecoration.ITALIC, false),
-                Component.text(plugin.getLocaleManager().formatMessage("magic.voting.no_votes", "votes", session.getNoVotes()), NamedTextColor.RED).decoration(TextDecoration.ITALIC, false),
+                plugin.getLocaleManager().formatMessage("magic.voting.yes_votes", "votes", session.getYesVotes()).color(NamedTextColor.GREEN).decoration(TextDecoration.ITALIC, false),
+                plugin.getLocaleManager().formatMessage("magic.voting.no_votes", "votes", session.getNoVotes()).color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false),
                 Component.empty(),
-                Component.text(plugin.getLocaleManager().getMessage("magic.voting.majority_wins"), NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)
+                plugin.getLocaleManager().formatMessage("magic.voting.majority_wins").color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)
         );
 
         meta.lore(lore);
