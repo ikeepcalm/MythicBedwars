@@ -8,6 +8,7 @@ import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
 import dev.ua.ikeepcalm.coi.api.model.PathwayData;
 import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
 import dev.ua.ikeepcalm.mythicBedwars.domain.core.PathwayManager;
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
 
@@ -49,6 +50,10 @@ public class ActingProgressionTask extends BukkitRunnable {
 
                 for (PathwayData pathway : beyonderData.pathways()) {
                     circleOfImaginationAPI.addActing(player, pathway.name(), actingAmount);
+
+                    if (circleOfImaginationAPI.getPrimaryActing(player) % 2000 == 0) {
+                        player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
+                    }
                 }
             }
         }

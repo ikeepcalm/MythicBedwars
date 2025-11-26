@@ -44,7 +44,7 @@ public class VotingManager {
         arenaSessions.put(arena.getName(), session);
         session.start();
 
-        MythicBedwars.getInstance().log("Voting started for arena: " + arena.getName() + " with " + arena.getPlayers().size() +  " players");
+        MythicBedwars.getInstance().log("Voting started for arena: " + arena.getName() + " with " + arena.getPlayers().size() + " players");
 
         for (Player player : arena.getPlayers()) {
             giveVotingItems(player, arena);
@@ -94,7 +94,13 @@ public class VotingManager {
     private ItemStack createVotingItem(Material material, Component name, Component description) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
-        meta.displayName(name.color(NamedTextColor.WHITE).decoration(TextDecoration.ITALIC, false));
+
+        if (material == Material.LIME_DYE) {
+            meta.displayName(name.color(NamedTextColor.GREEN).decoration(TextDecoration.ITALIC, false));
+        } else {
+            meta.displayName(name.color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
+        }
+
         meta.lore(java.util.List.of(description.color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)));
         item.setItemMeta(meta);
         return item;

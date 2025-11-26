@@ -11,7 +11,6 @@ import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
-import org.bukkit.event.player.PlayerGameModeChangeEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
@@ -30,8 +29,12 @@ public class SpectatorListener implements Listener {
         Player player = event.getPlayer();
         Arena arena = event.getArena();
 
-        if (player.getGameMode() == GameMode.SPECTATOR) {
-            plugin.getSpectatorManager().addSpectator(player, arena);
+        Collection<Player> spectatingPlayer = BedwarsAPI.getGameAPI().getSpectatingPlayers();
+
+        if (spectatingPlayer.contains(player)) {
+            if (!plugin.getSpectatorManager().isSpectating(player)) {
+                plugin.getSpectatorManager().addSpectator(player, arena);
+            }
         }
     }
 
@@ -50,29 +53,6 @@ public class SpectatorListener implements Listener {
 
         if (plugin.getSpectatorManager().isSpectating(player)) {
             plugin.getSpectatorManager().removeSpectator(player);
-        }
-    }
-
-    @EventHandler
-    public void onGameModeChange(PlayerGameModeChangeEvent event) {
-        Player player = event.getPlayer();
-        Arena arena = BedwarsAPI.getGameAPI().getArenaByPlayer(player);
-
-        if (arena == null) return;
-
-
-        Collection<Player> spectatingPlayer = BedwarsAPI.getGameAPI().getSpectatingPlayers();
-
-        if (spectatingPlayer.contains(player)) {
-            if (event.getNewGameMode() == GameMode.SPECTATOR) {
-                if (!plugin.getSpectatorManager().isSpectating(player)) {
-                    plugin.getSpectatorManager().addSpectator(player, arena);
-                }
-            } else {
-                if (plugin.getSpectatorManager().isSpectating(player)) {
-                    plugin.getSpectatorManager().removeSpectator(player);
-                }
-            }
         }
     }
 
