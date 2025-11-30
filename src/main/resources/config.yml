@@ -39,6 +39,12 @@ pathways:
   min-games-for-balance: 3
   # List of disabled pathways (pathway names)
   disabled: []
+  # List of blocked abilities (ability names)
+  blocked-abilities:
+    - "thread-hands"
+    - "nightmare"
+    - "travellers-door"
+    - "divination"
 
 # Spectator features
 spectator:

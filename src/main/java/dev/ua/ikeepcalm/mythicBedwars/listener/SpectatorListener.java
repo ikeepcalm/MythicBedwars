@@ -2,8 +2,8 @@ package dev.ua.ikeepcalm.mythicBedwars.listener;
 
 import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
-import de.marcely.bedwars.api.event.player.PlayerJoinArenaEvent;
-import de.marcely.bedwars.api.event.player.PlayerQuitArenaEvent;
+import de.marcely.bedwars.api.event.player.SpectatorJoinArenaEvent;
+import de.marcely.bedwars.api.event.player.SpectatorQuitArenaEvent;
 import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -14,8 +14,6 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 
-import java.util.Collection;
-
 public class SpectatorListener implements Listener {
 
     private final MythicBedwars plugin;
@@ -25,21 +23,17 @@ public class SpectatorListener implements Listener {
     }
 
     @EventHandler
-    public void onPlayerJoinArena(PlayerJoinArenaEvent event) {
+    public void onPlayerJoinArena(SpectatorJoinArenaEvent event) {
         Player player = event.getPlayer();
         Arena arena = event.getArena();
 
-        Collection<Player> spectatingPlayer = BedwarsAPI.getGameAPI().getSpectatingPlayers();
-
-        if (spectatingPlayer.contains(player)) {
-            if (!plugin.getSpectatorManager().isSpectating(player)) {
-                plugin.getSpectatorManager().addSpectator(player, arena);
-            }
+        if (!plugin.getSpectatorManager().isSpectating(player)) {
+            plugin.getSpectatorManager().addSpectator(player, arena);
         }
     }
 
     @EventHandler
-    public void onPlayerQuitArena(PlayerQuitArenaEvent event) {
+    public void onPlayerQuitArena(SpectatorQuitArenaEvent event) {
         Player player = event.getPlayer();
 
         if (plugin.getSpectatorManager().isSpectating(player)) {

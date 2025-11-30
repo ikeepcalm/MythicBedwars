@@ -57,7 +57,7 @@ public class PlayerListener implements Listener {
 
         String abilityName = event.getAbility().plainName();
 
-        List<String> blockedAbilities = List.of("thread-hands", "nightmare", "travelers-door");
+        List<String> blockedAbilities = plugin.getConfigManager().getBlockedAbilities();
         if (blockedAbilities.stream().anyMatch(abilityName::equalsIgnoreCase)) {
             event.setCancelled(true);
         }

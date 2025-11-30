@@ -53,6 +53,10 @@ public class ConfigLoader {
         return config.getStringList("pathways.disabled");
     }
 
+    public List<String> getBlockedAbilities() {
+        return config.getStringList("pathways.blocked-abilities");
+    }
+
     public boolean isPathwayBalancingEnabled() {
         return config.getBoolean("pathways.auto-balance", false);
     }
