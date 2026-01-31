@@ -30,7 +30,7 @@ dependencies {
     implementation("org.xerial:sqlite-jdbc:3.49.1.0")
     compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
     compileOnly 'de.marcely.bedwars:API:5.5.5'
-    compileOnly 'dev.ua.ikeepcalm:circle-of-imagination-api:1.2.8-SNAPSHOT'
+    compileOnly 'dev.ua.ikeepcalm:circle-of-imagination-api:1.3.4-SNAPSHOT'
 }
 
 tasks {

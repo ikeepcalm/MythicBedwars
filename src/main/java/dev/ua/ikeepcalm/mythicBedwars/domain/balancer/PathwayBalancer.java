@@ -27,15 +27,25 @@ public class PathwayBalancer {
         List<String> availablePathways = getBalancedPathwayPool();
         Map<Team, String> assignments = new HashMap<>();
 
-        List<Team> teams = new ArrayList<>(arena.getAliveTeams());
-        Collections.shuffle(teams);
+        // Collect teams from players instead of using getAliveTeams()
+        // because teams aren't marked as "alive" yet when game just started
+        Set<Team> teams = new HashSet<>();
+        for (var player : arena.getPlayers()) {
+            Team team = arena.getPlayerTeam(player);
+            if (team != null) {
+                teams.add(team);
+            }
+        }
 
-        for (int i = 0; i < teams.size(); i++) {
+        List<Team> teamList = new ArrayList<>(teams);
+        Collections.shuffle(teamList);
+
+        for (int i = 0; i < teamList.size(); i++) {
             if (i >= availablePathways.size()) {
                 Collections.shuffle(availablePathways);
                 i = i % availablePathways.size();
             }
-            assignments.put(teams.get(i), availablePathways.get(i));
+            assignments.put(teamList.get(i), availablePathways.get(i));
         }
 
         plugin.log("Assigned balanced pathways for arena " + arena.getName() + ": " +
@@ -117,8 +127,21 @@ public class PathwayBalancer {
 
         Collections.shuffle(availablePathways);
 
+        // Collect teams from players instead of using getAliveTeams()
+        // because teams aren't marked as "alive" yet when game just started
+        Set<Team> teams = new HashSet<>();
+        for (var player : arena.getPlayers()) {
+            Team team = arena.getPlayerTeam(player);
+            if (team != null) {
+                teams.add(team);
+            }
+        }
+
+        List<Team> teamList = new ArrayList<>(teams);
+        Collections.shuffle(teamList);
+
         int index = 0;
-        for (Team team : arena.getAliveTeams()) {
+        for (Team team : teamList) {
             if (index >= availablePathways.size()) {
                 Collections.shuffle(availablePathways);
                 index = 0;
