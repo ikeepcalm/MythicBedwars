@@ -69,10 +69,10 @@ public class SpectatorManager {
             createBossBar(player);
         }
 
-        player.sendMessage(Component.text("=== MythicBedwars Spectator Mode ===", NamedTextColor.GOLD));
-        player.sendMessage(Component.text("Use /mbspec to configure your spectator experience!", NamedTextColor.YELLOW));
-        player.sendMessage(Component.text("• Right-click players to view their magical status", NamedTextColor.GRAY));
-        player.sendMessage(Component.text("• Boss bar shows team magical progress", NamedTextColor.GRAY));
+        player.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.welcome"));
+        player.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.commands_help"));
+        player.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.right_click_hint"));
+        player.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.boss_bar_hint"));
     }
 
     private void cleanupSpectatorDisplay(Player player) {
@@ -83,11 +83,7 @@ public class SpectatorManager {
     }
 
     private void sendWelcomeMessage(Player player, Arena arena) {
-        Component welcome = Component.text("Now spectating: ", NamedTextColor.GRAY)
-                .append(Component.text(arena.getName(), NamedTextColor.GOLD))
-                .append(Component.text(" with magical enhancements!", NamedTextColor.GRAY));
-        player.sendMessage(welcome);
-
+        player.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.now_spectating", "arena", arena.getName()));
         showTeamPathways(player, arena);
     }
 
@@ -101,7 +97,7 @@ public class SpectatorManager {
         }
 
         if (!teamPathways.isEmpty()) {
-            player.sendMessage(Component.text("Team Pathways:", NamedTextColor.YELLOW));
+            player.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.team_pathways"));
             for (Map.Entry<Team, String> entry : teamPathways.entrySet()) {
                 TextColor teamColor = getTeamColor(entry.getKey());
                 Component line = Component.text("• ", NamedTextColor.GRAY)
@@ -115,7 +111,7 @@ public class SpectatorManager {
 
     private void createBossBar(Player player) {
         BossBar bossBar = BossBar.bossBar(
-                Component.text("Magical Status Loading...", NamedTextColor.LIGHT_PURPLE),
+                plugin.getLocaleManager().formatMessage("magic.spectator.magical_status_loading"),
                 0.0f,
                 BossBar.Color.PURPLE,
                 BossBar.Overlay.PROGRESS
@@ -158,20 +154,42 @@ public class SpectatorManager {
         String pathway = plugin.getArenaPathwayManager().getTeamPathway(arena, currentTeam);
         if (pathway == null) return;
 
+        List<Player> teamPlayers = arena.getPlayers().stream()
+                .filter(p -> currentTeam.equals(arena.getPlayerTeam(p)))
+                .filter(circleOfImaginationAPI::isBeyonder)
+                .toList();
+
         double avgSequence = 9.0;
         double avgActingPercent = 0.0;
+
+        if (!teamPlayers.isEmpty()) {
+            avgSequence = teamPlayers.stream()
+                    .mapToInt(p -> circleOfImaginationAPI.getBeyonderData(p).lowestSequence())
+                    .average()
+                    .orElse(9.0);
+
+            avgActingPercent = teamPlayers.stream()
+                    .mapToDouble(p -> {
+                        BeyonderData bd = circleOfImaginationAPI.getBeyonderData(p);
+                        if (bd == null || bd.pathways().isEmpty()) return 0.0;
+                        PathwayData pd = bd.pathways().getFirst();
+                        return pd.neededActing() > 0 ? (double) pd.acting() / pd.neededActing() * 100.0 : 0.0;
+                    })
+                    .average()
+                    .orElse(0.0);
+        }
 
         TextColor teamColor = getTeamColor(currentTeam);
         Component title = Component.text(currentTeam.getDisplayName(), teamColor)
                 .append(Component.text(" (", NamedTextColor.GRAY))
                 .append(Component.text(pathway, NamedTextColor.LIGHT_PURPLE))
-                .append(Component.text(") - Avg Sequence: ", NamedTextColor.GRAY))
-                .append(Component.text(String.format("%.1f", 9 - avgSequence), NamedTextColor.YELLOW))
+                .append(Component.text(") | Seq: ", NamedTextColor.GRAY))
+                .append(Component.text(String.format("%.1f", avgSequence), getSequenceColor((int) Math.round(avgSequence))))
                 .append(Component.text(" | Acting: ", NamedTextColor.GRAY))
-                .append(Component.text(String.format("%.0f%%", avgActingPercent), NamedTextColor.GREEN));
+                .append(Component.text(String.format("%.0f%%", avgActingPercent), getActingColor(avgActingPercent)));
 
         bossBar.name(title);
-        bossBar.progress((float) Math.min(avgActingPercent / 100.0, 1.0));
+        bossBar.progress((float) Math.min(avgActingPercent / 100.0, 1.0f));
     }
 
     private void updateActionBar(Player spectator, Arena arena, SpectatorData data) {
@@ -219,21 +237,23 @@ public class SpectatorManager {
         if (arena == null) return;
 
         Team team = arena.getPlayerTeam(target);
-        String pathway = team != null ? plugin.getArenaPathwayManager().getTeamPathway(arena, team) : "Unknown";
+        String pathway = team != null ? plugin.getArenaPathwayManager().getTeamPathway(arena, team) : null;
 
-        spectator.sendMessage(Component.text("=== " + target.getName() + "'s Magical Status ===", NamedTextColor.GOLD));
+        spectator.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.player_status", "player", target.getName()));
 
         TextColor teamColor = team != null ? getTeamColor(team) : NamedTextColor.WHITE;
-        spectator.sendMessage(Component.text("Team: ", NamedTextColor.GRAY)
+        spectator.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.team")
+                .append(Component.space())
                 .append(Component.text(team != null ? team.getDisplayName() : "None", teamColor)));
 
-        spectator.sendMessage(Component.text("Pathway: ", NamedTextColor.GRAY)
-                .append(Component.text(pathway, NamedTextColor.LIGHT_PURPLE)));
+        spectator.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.pathway")
+                .append(Component.space())
+                .append(Component.text(pathway != null ? pathway : "Unknown", NamedTextColor.LIGHT_PURPLE)));
 
         BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(target);
 
         if (beyonderData == null || beyonderData.pathways().isEmpty()) {
-            spectator.sendMessage(Component.text("No magical data available", NamedTextColor.RED));
+            spectator.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.no_magic_data"));
             return;
         }
 
@@ -241,16 +261,16 @@ public class SpectatorManager {
         int sequence = flexPathway.lowestSequenceLevel();
         int acting = flexPathway.acting();
         int neededActing = flexPathway.neededActing();
-        double actingPercent = ((double) acting / neededActing) * 100;
+        double actingPercent = neededActing > 0 ? ((double) acting / neededActing) * 100 : 0;
 
-        spectator.sendMessage(Component.text("Current Sequence: ", NamedTextColor.GRAY)
+        spectator.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.current_sequence")
+                .append(Component.space())
                 .append(Component.text(String.valueOf(sequence), getSequenceColor(sequence))));
 
-        spectator.sendMessage(Component.text("Acting: ", NamedTextColor.GRAY)
+        spectator.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.acting")
+                .append(Component.space())
                 .append(Component.text(acting + "/" + neededActing, NamedTextColor.GREEN))
-                .append(Component.text(" (", NamedTextColor.GRAY))
-                .append(Component.text(String.format("%.1f%%", actingPercent), getActingColor(actingPercent)))
-                .append(Component.text(")", NamedTextColor.GRAY)));
+                .append(Component.text(" (" + String.format("%.1f%%", actingPercent) + ")", getActingColor(actingPercent))));
     }
 
     private Player findNearestPlayer(Player spectator, Arena arena) {

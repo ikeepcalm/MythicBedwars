@@ -61,6 +61,26 @@ public class ConfigLoader {
         return config.getBoolean("pathways.auto-balance", false);
     }
 
+    public double getDeathActingPenalty() {
+        return config.getDouble("acting.death-penalty", 0.15);
+    }
+
+    public double getSequenceMultiplier(int sequence) {
+        double fallback = switch (sequence) {
+            case 9 -> 3.5;
+            case 8 -> 3.0;
+            case 7 -> 2.5;
+            case 6 -> 1.3;
+            case 5 -> 1.1;
+            case 4 -> 0.4;
+            case 3 -> 0.3;
+            case 2 -> 0.2;
+            case 1 -> 0.1;
+            default -> 0.05;
+        };
+        return config.getDouble("acting.sequence-multipliers." + sequence, fallback);
+    }
+
     public int getMaxSequencePurchases(int sequence) {
         return config.getInt("shop.max-purchases.sequence-" + sequence, -1);
     }

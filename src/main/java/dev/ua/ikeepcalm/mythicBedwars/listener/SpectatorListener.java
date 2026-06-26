@@ -5,8 +5,6 @@ import de.marcely.bedwars.api.arena.Arena;
 import de.marcely.bedwars.api.event.player.SpectatorJoinArenaEvent;
 import de.marcely.bedwars.api.event.player.SpectatorQuitArenaEvent;
 import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.GameMode;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -71,7 +69,7 @@ public class SpectatorListener implements Listener {
         var spectatorData = plugin.getSpectatorManager().getSpectatorData(spectator);
         if (spectatorData != null && spectatorData.isActionBarEnabled()) {
             spectatorData.setTargetPlayer(target);
-            spectator.sendMessage(Component.text("Now tracking " + target.getName() + " in action bar", NamedTextColor.GREEN));
+            spectator.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.target_set", "player", target.getName()));
         }
     }
 }

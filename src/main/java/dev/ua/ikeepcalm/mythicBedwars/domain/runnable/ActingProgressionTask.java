@@ -3,6 +3,7 @@ package dev.ua.ikeepcalm.mythicBedwars.domain.runnable;
 import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
 import de.marcely.bedwars.api.arena.ArenaStatus;
+import de.marcely.bedwars.api.arena.Team;
 import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
 import dev.ua.ikeepcalm.coi.api.model.PathwayData;
@@ -26,26 +27,29 @@ public class ActingProgressionTask extends BukkitRunnable {
     public void run() {
         for (Arena arena : BedwarsAPI.getGameAPI().getArenas()) {
             if (arena.getStatus() != ArenaStatus.RUNNING) continue;
-
             if (!plugin.getVotingManager().isMagicEnabled(arena.getName())) continue;
 
             for (Player player : arena.getPlayers()) {
                 PathwayManager.PlayerMagicData data = plugin.getArenaPathwayManager().getPlayerData(player);
                 if (data == null || !data.isActive()) continue;
-
                 if (!circleOfImaginationAPI.isBeyonder(player)) continue;
+
+                BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(player);
+                int sequence = beyonderData.lowestSequence();
+
+                // Sync cached sequence and detect advancement
+                int previousSequence = data.getCurrentSequence();
+                if (sequence != previousSequence) {
+                    data.setCurrentSequence(sequence);
+                    if (sequence < previousSequence) {
+                        notifySequenceAdvancement(player, arena, sequence, data.getPathway());
+                    }
+                }
 
                 double multiplier = plugin.getConfigManager().getPassiveActingMultiplier();
                 int baseAmount = plugin.getConfigManager().getPassiveActingAmount();
-
-                BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(player);
-
-                int sequence = beyonderData.lowestSequence();
                 double sequenceMultiplier = getSequenceMultiplier(sequence);
-
-                long effectivePlayTime = data.getEffectivePlayTime();
-                double timeBasedMultiplier = getTimeBasedMultiplier(effectivePlayTime, sequence);
-
+                double timeBasedMultiplier = getTimeBasedMultiplier(data.getEffectivePlayTime(), sequence);
                 int actingAmount = (int) (baseAmount * multiplier * sequenceMultiplier * timeBasedMultiplier);
 
                 for (PathwayData pathway : beyonderData.pathways()) {
@@ -59,53 +63,39 @@ public class ActingProgressionTask extends BukkitRunnable {
         }
     }
 
-    private double getSequenceMultiplier(int sequence) {
-        return switch (sequence) {
-            case 9 -> 3.5;
-            case 8 -> 3.0;
-            case 7 -> 2.5;
-            case 6 -> 1.3;
-            case 5 -> 1.1;
-            case 4 -> 0.4;
-            case 3 -> 0.3;
-            case 2 -> 0.2;
-            case 1 -> 0.1;
-            default -> 0.05;
-        };
+    private void notifySequenceAdvancement(Player player, Arena arena, int newSequence, String pathway) {
+        Team playerTeam = arena.getPlayerTeam(player);
+
+        for (Player member : arena.getPlayers()) {
+            if (playerTeam == null || playerTeam.equals(arena.getPlayerTeam(member))) {
+                member.sendMessage(plugin.getLocaleManager().formatMessage(
+                        "magic.messages.sequence_advanced",
+                        "player", player.getName(),
+                        "sequence", newSequence,
+                        "pathway", pathway));
+            }
+        }
+
+        player.playSound(player.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.8f, 1.2f);
     }
 
-    /**
-     * Provides additional time-based multiplier to maintain fast progression for players
-     * who have been playing longer, ensuring disconnections don't reset progression speed.
-     */
+    private double getSequenceMultiplier(int sequence) {
+        return plugin.getConfigManager().getSequenceMultiplier(sequence);
+    }
+
     private double getTimeBasedMultiplier(long effectivePlayTimeMs, int sequence) {
         long playTimeMinutes = effectivePlayTimeMs / (1000 * 60);
 
-        // For higher sequences (9-7), provide additional boost for longer play time
-        // This helps players who disconnect and reconnect maintain their fast progression
         if (sequence >= 7) {
-            // After 5 minutes: 1.5x boost, after 10 minutes: 2.0x boost, max 2.5x at 15+ minutes
-            if (playTimeMinutes >= 15) {
-                return 2.5;
-            } else if (playTimeMinutes >= 10) {
-                return 2.0;
-            } else if (playTimeMinutes >= 5) {
-                return 1.5;
-            }
+            if (playTimeMinutes >= 15) return 2.5;
+            if (playTimeMinutes >= 10) return 2.0;
+            if (playTimeMinutes >= 5)  return 1.5;
         } else if (sequence >= 5) {
-            // For mid sequences (6-5), provide moderate boost
-            if (playTimeMinutes >= 10) {
-                return 1.8;
-            } else if (playTimeMinutes >= 5) {
-                return 1.3;
-            }
+            if (playTimeMinutes >= 10) return 1.8;
+            if (playTimeMinutes >= 5)  return 1.3;
         } else if (sequence >= 3) {
-            // For lower sequences (4-3), provide small boost to maintain progression
-            if (playTimeMinutes >= 8) {
-                return 1.4;
-            } else if (playTimeMinutes >= 4) {
-                return 1.2;
-            }
+            if (playTimeMinutes >= 8) return 1.4;
+            if (playTimeMinutes >= 4) return 1.2;
         }
 
         return 1.0;

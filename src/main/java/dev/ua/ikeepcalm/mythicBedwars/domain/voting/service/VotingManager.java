@@ -3,7 +3,6 @@ package dev.ua.ikeepcalm.mythicBedwars.domain.voting.service;
 import de.marcely.bedwars.api.arena.Arena;
 import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
 import dev.ua.ikeepcalm.mythicBedwars.domain.voting.model.VotingSession;
-import dev.ua.ikeepcalm.mythicBedwars.gui.VotingGUI;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
@@ -116,7 +115,10 @@ public class VotingManager {
         if (arena == null) return;
 
         VotingSession session = arenaSessions.get(arena.getName());
-        if (session == null || !session.isActive()) return;
+        if (session == null || !session.isActive()) {
+            player.sendMessage(plugin.getLocaleManager().formatMessage("magic.voting.not_active"));
+            return;
+        }
 
         boolean vote = material == Material.LIME_DYE;
         session.castVote(player.getUniqueId(), vote);
@@ -178,7 +180,4 @@ public class VotingManager {
         MythicBedwars.getInstance().log("Force set magic {} for arena: {}", enabled ? "ENABLED" : "DISABLED", arenaName);
     }
 
-    public VotingGUI getVotingGUI() {
-        return new VotingGUI(plugin);
-    }
 }

@@ -8,7 +8,6 @@ import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
 import dev.ua.ikeepcalm.mythicBedwars.domain.balancer.PathwayBalancer;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,6 +61,13 @@ public class PathwayManager {
     }
 
     public void initializePlayerMagic(Player player, Arena arena, Team team) {
+        // Check if pathways have been assigned for this arena, if not assign them now
+        Map<Team, String> teamPathways = arenaPathways.get(arena.getName());
+        if (teamPathways == null || teamPathways.isEmpty()) {
+            MythicBedwars.getInstance().log("Pathways not assigned yet for arena " + arena.getName() + ", assigning now");
+            assignPathwaysToTeams(arena);
+        }
+
         String pathway = getTeamPathway(arena, team);
         if (pathway == null) {
             MythicBedwars.getInstance().log("No pathway assigned to team " + team.getDisplayName() +
@@ -103,6 +109,7 @@ public class PathwayManager {
 
             existingData.resetGameStartTimeOnReconnect();
             existingData.setActive(true);
+            playerArenaCache.put(playerId, arena.getName());
             return;
         }
 
@@ -156,15 +163,8 @@ public class PathwayManager {
         if (players != null) {
             for (UUID playerId : players) {
                 Player player = Bukkit.getPlayer(playerId);
-                if (player != null) {
-                    if (circleOfImaginationAPI.isBeyonder(player)) {
-                        new BukkitRunnable() {
-                            @Override
-                            public void run() {
-                                circleOfImaginationAPI.destroyBeyonder(player);
-                            }
-                        }.runTaskLater(MythicBedwars.getInstance(), 60L);
-                    }
+                if (player != null && circleOfImaginationAPI.isBeyonder(player)) {
+                    circleOfImaginationAPI.destroyBeyonder(player);
                 }
                 playerData.remove(playerId);
                 playerArenaCache.remove(playerId);

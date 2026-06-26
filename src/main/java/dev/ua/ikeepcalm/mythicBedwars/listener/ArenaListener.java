@@ -13,8 +13,10 @@ import de.marcely.bedwars.api.event.player.PlayerKillPlayerEvent;
 import de.marcely.bedwars.api.event.player.PlayerQuitArenaEvent;
 import de.marcely.bedwars.api.event.player.PlayerTeamChangeEvent;
 import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
 import dev.ua.ikeepcalm.coi.api.model.PathwayData;
 import dev.ua.ikeepcalm.mythicBedwars.MythicBedwars;
+import dev.ua.ikeepcalm.mythicBedwars.domain.core.PathwayManager;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -101,6 +103,36 @@ public class ArenaListener implements Listener {
         if (plugin.getStatisticsManager() != null && plugin.getVotingManager().isMagicEnabled(arena.getName())) {
             plugin.getStatisticsManager().recordGameEnd(arena, winner);
         }
+
+        if (plugin.getVotingManager().isMagicEnabled(arena.getName())) {
+            for (Player player : arena.getPlayers()) {
+                sendMagicSummary(player, arena, winner);
+            }
+        }
+    }
+
+    private void sendMagicSummary(Player player, Arena arena, Team winner) {
+        PathwayManager.PlayerMagicData data = plugin.getArenaPathwayManager().getPlayerData(player);
+        if (data == null) return;
+
+        BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(player);
+        if (beyonderData == null || beyonderData.pathways().isEmpty()) return;
+
+        PathwayData primary = beyonderData.pathways().getFirst();
+        int sequence = primary.lowestSequenceLevel();
+        int acting = primary.acting();
+        int neededActing = primary.neededActing();
+        double actingPercent = neededActing > 0 ? (double) acting / neededActing * 100 : 0;
+
+        boolean won = winner != null && winner.equals(arena.getPlayerTeam(player));
+
+        player.sendMessage(plugin.getLocaleManager().formatMessage("magic.summary.header"));
+        player.sendMessage(plugin.getLocaleManager().formatMessage("magic.summary.pathway", "pathway", data.getPathway()));
+        player.sendMessage(plugin.getLocaleManager().formatMessage("magic.summary.sequence", "sequence", sequence));
+        player.sendMessage(plugin.getLocaleManager().formatMessage("magic.summary.acting", "percent", String.format("%.1f", actingPercent)));
+        if (won) {
+            player.sendMessage(plugin.getLocaleManager().formatMessage("magic.summary.victory"));
+        }
     }
 
     @EventHandler
@@ -173,24 +205,38 @@ public class ArenaListener implements Listener {
 
     @EventHandler
     public void onPlayerKill(PlayerKillPlayerEvent event) {
-        Player killer = event.getKiller();
-        if (killer == null) return;
-
         Arena arena = event.getArena();
         if (!plugin.getVotingManager().isMagicEnabled(arena.getName())) return;
 
-        if (!circleOfImaginationAPI.isBeyonder(killer)) return;
+        Player killer = event.getKiller();
+        if (killer != null && circleOfImaginationAPI.isBeyonder(killer)) {
+            double multiplier = event.isFatalDeath()
+                    ? plugin.getConfigManager().getFinalKillActingMultiplier()
+                    : plugin.getConfigManager().getKillActingMultiplier();
+            int actingAmount = (int) (100 * multiplier);
+            for (PathwayData pathway : circleOfImaginationAPI.getPathwayData(killer)) {
+                circleOfImaginationAPI.addActing(killer, pathway.name(), actingAmount);
+            }
+        }
 
-        double multiplier = event.isFatalDeath() ?
-                plugin.getConfigManager().getFinalKillActingMultiplier() :
-                plugin.getConfigManager().getKillActingMultiplier();
-
-        int actingAmount = (int) (100 * multiplier);
-
-        List<PathwayData> pathwayData = circleOfImaginationAPI.getPathwayData(killer);
-
-        for (PathwayData pathway : pathwayData) {
-            circleOfImaginationAPI.addActing(killer, pathway.name(), actingAmount);
+        // Acting penalty on regular death (fatal = eliminated, no penalty needed)
+        if (!event.isFatalDeath()) {
+            Player victim = event.getPlayer();
+            if (victim != null && circleOfImaginationAPI.isBeyonder(victim)) {
+                double penaltyFraction = plugin.getConfigManager().getDeathActingPenalty();
+                if (penaltyFraction > 0) {
+                    BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(victim);
+                    if (beyonderData != null && !beyonderData.pathways().isEmpty()) {
+                        int currentActing = beyonderData.pathways().getFirst().acting();
+                        int penalty = (int) (currentActing * penaltyFraction);
+                        if (penalty > 0) {
+                            circleOfImaginationAPI.setPrimaryActing(victim, Math.max(0, currentActing - penalty));
+                            victim.sendMessage(plugin.getLocaleManager().formatMessage(
+                                    "magic.messages.death_penalty", "amount", penalty));
+                        }
+                    }
+                }
+            }
         }
     }
 
