@@ -3,6 +3,8 @@ package dev.ua.ikeepcalm.mythicBedwars.domain.spectator;
 import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
 import de.marcely.bedwars.api.arena.Team;
+import de.marcely.bedwars.api.game.spectator.SpectateReason;
+import de.marcely.bedwars.api.game.spectator.Spectator;
 import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
 import dev.ua.ikeepcalm.coi.api.model.PathwayData;
@@ -44,7 +46,20 @@ public class SpectatorManager {
     }
 
     public void addSpectator(Player player, Arena arena) {
+        Spectator spectator = arena.getSpectateData(player);
+        if (spectator == null || !canUseSpectatorFeatures(spectator)) {
+            return;
+        }
+
+        addSpectator(player, arena, spectator.getReason());
+    }
+
+    public void addSpectator(Player player, Arena arena, SpectateReason reason) {
         if (!plugin.getConfigManager().isSpectatorFeaturesEnabled()) {
+            return;
+        }
+
+        if (!canUseSpectatorFeatures(reason)) {
             return;
         }
 
@@ -131,6 +146,11 @@ public class SpectatorManager {
             SpectatorData data = entry.getValue();
             Arena arena = BedwarsAPI.getGameAPI().getArenaByName(data.getArenaName());
             if (arena == null) {
+                continue;
+            }
+
+            if (!canUseSpectatorFeatures(spectator, arena)) {
+                removeSpectator(spectator);
                 continue;
             }
 
@@ -319,6 +339,23 @@ public class SpectatorManager {
 
     public boolean isSpectating(Player player) {
         return spectatorData.containsKey(player.getUniqueId());
+    }
+
+    public boolean canUseSpectatorFeatures(Player player, Arena arena) {
+        if (!plugin.getConfigManager().isSpectatorFeaturesEnabled()) {
+            return false;
+        }
+
+        Spectator spectator = arena.getSpectateData(player);
+        return spectator != null && canUseSpectatorFeatures(spectator);
+    }
+
+    private boolean canUseSpectatorFeatures(Spectator spectator) {
+        return spectator.isPresent() && canUseSpectatorFeatures(spectator.getReason());
+    }
+
+    private boolean canUseSpectatorFeatures(SpectateReason reason) {
+        return reason != SpectateReason.DEATH;
     }
 
     public void shutdown() {

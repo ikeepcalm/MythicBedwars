@@ -26,7 +26,7 @@ public class SpectatorListener implements Listener {
         Arena arena = event.getArena();
 
         if (!plugin.getSpectatorManager().isSpectating(player)) {
-            plugin.getSpectatorManager().addSpectator(player, arena);
+            plugin.getSpectatorManager().addSpectator(player, arena, event.getReason());
         }
     }
 
@@ -59,6 +59,7 @@ public class SpectatorListener implements Listener {
 
         Arena arena = BedwarsAPI.getGameAPI().getArenaByPlayer(spectator);
         if (arena == null || !arena.getPlayers().contains(target)) return;
+        if (!plugin.getSpectatorManager().canUseSpectatorFeatures(spectator, arena)) return;
 
         if (target.getGameMode() == GameMode.SPECTATOR) return;
 

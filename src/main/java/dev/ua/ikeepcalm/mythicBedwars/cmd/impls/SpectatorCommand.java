@@ -41,7 +41,8 @@ public class SpectatorCommand implements CommandExecutor, TabCompleter {
         }
 
         Arena arena = BedwarsAPI.getGameAPI().getArenaByPlayer(player);
-        if (arena == null || player.getGameMode() != GameMode.SPECTATOR) {
+        if (arena == null || player.getGameMode() != GameMode.SPECTATOR
+                || !plugin.getSpectatorManager().canUseSpectatorFeatures(player, arena)) {
             player.sendMessage(Component.text("You must be spectating a Bedwars game to use this command!", NamedTextColor.RED));
             return true;
         }
@@ -232,7 +233,8 @@ public class SpectatorCommand implements CommandExecutor, TabCompleter {
                         arena = BedwarsAPI.getGameAPI().getArenaByPlayer(player);
                     }
 
-                    if (arena != null) {
+                    if (arena != null && sender instanceof Player player
+                            && plugin.getSpectatorManager().canUseSpectatorFeatures(player, arena)) {
                         return arena.getPlayers().stream()
                                 .filter(p -> p.getGameMode() != GameMode.SPECTATOR)
                                 .map(Player::getName)
