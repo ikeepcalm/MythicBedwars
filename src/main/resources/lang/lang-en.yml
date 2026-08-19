@@ -60,6 +60,7 @@ magic:
     target_set: "&7Now tracking &a{player}&7!"
     target_cleared: "&7Target cleared! &fAction bar acts as proximity radar."
   commands:
+    minigame_only: "&cThat command is only available on the Bedwars server."
     no_permission: "&cInsufficient Permissions!"
     player_only: "&cThis command is restricted to players only!"
     not_spectating: "&cYou must be spectating a Bedwars match to use this!"

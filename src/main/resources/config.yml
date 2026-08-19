@@ -1,5 +1,16 @@
 # MythicBedwars Configuration
 
+# Cross-server event games ("recruit from the SMP")
+#
+# The same jar runs on both the survival server and the Bedwars server; `role` decides which half
+# boots here. Leave `enabled: false` for a standalone Bedwars server - nothing below is read then,
+# and the plugin behaves exactly as it always has.
+network:
+  enabled: false
+  # SMP      - the survival server players are recruited from (MBedwars not required)
+  # MINIGAME - the Bedwars server that hosts the matches
+  role: MINIGAME
+
 # Global plugin settings
 global:
   enabled: true

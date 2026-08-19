@@ -1,0 +1,76 @@
+package dev.ua.ikeepcalm.bedwars.listener;
+
+import de.marcely.bedwars.api.BedwarsAPI;
+import de.marcely.bedwars.api.arena.Arena;
+import de.marcely.bedwars.api.event.player.SpectatorJoinArenaEvent;
+import de.marcely.bedwars.api.event.player.SpectatorQuitArenaEvent;
+import dev.ua.ikeepcalm.bedwars.MythicBedwars;
+import org.bukkit.GameMode;
+import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+
+public class SpectatorListener implements Listener {
+
+    private final MythicBedwars plugin;
+
+    public SpectatorListener(MythicBedwars plugin) {
+        this.plugin = plugin;
+    }
+
+    @EventHandler
+    public void onPlayerJoinArena(SpectatorJoinArenaEvent event) {
+        Player player = event.getPlayer();
+        Arena arena = event.getArena();
+
+        if (!plugin.getSpectatorManager().isSpectating(player)) {
+            plugin.getSpectatorManager().addSpectator(player, arena, event.getReason());
+        }
+    }
+
+    @EventHandler
+    public void onPlayerQuitArena(SpectatorQuitArenaEvent event) {
+        Player player = event.getPlayer();
+
+        if (plugin.getSpectatorManager().isSpectating(player)) {
+            plugin.getSpectatorManager().removeSpectator(player);
+        }
+    }
+
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        Player player = event.getPlayer();
+
+        if (plugin.getSpectatorManager().isSpectating(player)) {
+            plugin.getSpectatorManager().removeSpectator(player);
+        }
+    }
+
+    @EventHandler
+    public void onPlayerInteractEntity(PlayerInteractEntityEvent event) {
+        Player spectator = event.getPlayer();
+
+        if (spectator.getGameMode() != GameMode.SPECTATOR) return;
+        if (!plugin.getSpectatorManager().isSpectating(spectator)) return;
+
+        if (!(event.getRightClicked() instanceof Player target)) return;
+
+        Arena arena = BedwarsAPI.getGameAPI().getArenaByPlayer(spectator);
+        if (arena == null || !arena.getPlayers().contains(target)) return;
+        if (!plugin.getSpectatorManager().canUseSpectatorFeatures(spectator, arena)) return;
+
+        if (target.getGameMode() == GameMode.SPECTATOR) return;
+
+        event.setCancelled(true);
+
+        plugin.getSpectatorManager().showPlayerDetails(spectator, target);
+
+        var spectatorData = plugin.getSpectatorManager().getSpectatorData(spectator);
+        if (spectatorData != null && spectatorData.isActionBarEnabled()) {
+            spectatorData.setTargetPlayer(target);
+            spectator.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.target_set", "player", target.getName()));
+        }
+    }
+}

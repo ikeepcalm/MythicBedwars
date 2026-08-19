@@ -1,13 +1,13 @@
 name: MythicBedwars
 version: '1.0-SNAPSHOT'
-main: dev.ua.ikeepcalm.mythicBedwars.MythicBedwars
+main: dev.ua.ikeepcalm.bedwars.MythicBedwars
 api-version: '1.21'
 authors: [ ikeepcaIm ]
 description: "Magic addon for Marcely's Bedwars using Circle of Imagination"
 depend:
-  - MBedwars
   - CircleOfImagination
 softdepend:
+  - MBedwars
   - Plan
 commands:
   mythicbedwars:

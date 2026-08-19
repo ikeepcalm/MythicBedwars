@@ -60,6 +60,7 @@ magic:
     target_set: "Зараз відстежується {player}!"
     target_cleared: "Ціль очищена! Панель дій покаже найближчого гравця."
   commands:
+    minigame_only: "&cЦя команда доступна лише на сервері Bedwars."
     no_permission: "Немає дозволу!"
     player_only: "Ця команда лише для гравців!"
     not_spectating: "Ви повинні спостерігати за грою Bedwars для використання цієї команди!"
