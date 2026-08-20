@@ -26,6 +26,14 @@ public class VotingManager {
     }
 
     public void startVoting(Arena arena) {
+        // Defence in depth: an event arena must never get a session, because endVoting() would then
+        // overwrite the pre-seeded result and could turn magic off mid-event.
+        if (plugin.isEventArena(arena.getName())) {
+            votingResults.put(arena.getName(), true);
+            MythicBedwars.getInstance().log("Voting bypassed for event arena: {}", arena.getName());
+            return;
+        }
+
         if (!plugin.getConfigManager().isGloballyEnabled() ||
             !plugin.getConfigManager().isArenaEnabled(arena.getName()) ||
             !plugin.getConfigManager().isVotingEnabled()) {

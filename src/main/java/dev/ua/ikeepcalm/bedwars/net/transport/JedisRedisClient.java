@@ -187,6 +187,35 @@ public class JedisRedisClient implements RedisClient {
     }
 
     @Override
+    public boolean deleteIfEquals(String key, String expectedValue) {
+        // Read-then-delete would race with expiry; the compare has to happen inside Redis.
+        return withRedis(jedis -> {
+            Object result = jedis.eval(
+                    "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end",
+                    List.of(key), List.of(expectedValue));
+            return result instanceof Long deleted && deleted > 0;
+        }, false);
+    }
+
+    @Override
+    public boolean hset(String key, Map<String, String> values, int ttlSeconds) {
+        if (values.isEmpty()) {
+            return false;
+        }
+
+        return withRedis(jedis -> {
+            jedis.hset(key, values);
+            jedis.expire(key, ttlSeconds);
+            return true;
+        }, false);
+    }
+
+    @Override
+    public Map<String, String> hgetAll(String key) {
+        return withRedis(jedis -> jedis.hgetAll(key), Map.of());
+    }
+
+    @Override
     public Set<String> scan(String matchPattern, int limit) {
         return withRedis(jedis -> {
             Set<String> found = new HashSet<>();

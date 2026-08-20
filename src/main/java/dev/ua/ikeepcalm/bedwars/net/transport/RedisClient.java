@@ -2,6 +2,7 @@ package dev.ua.ikeepcalm.bedwars.net.transport;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -70,6 +71,25 @@ public interface RedisClient {
     List<String> getAll(Collection<String> keys);
 
     boolean delete(String key);
+
+    /**
+     * Deletes {@code key} only if it still holds {@code expectedValue}.
+     *
+     * <p>The safe way to release a lock: a plain delete could drop a lock that had already expired
+     * and been re-acquired by somebody else.
+     */
+    boolean deleteIfEquals(String key, String expectedValue);
+
+    /**
+     * Writes the given fields into a hash and refreshes its expiry. Fields not mentioned are left
+     * alone, so two sides can update different parts of the same record without clobbering.
+     */
+    boolean hset(String key, Map<String, String> values, int ttlSeconds);
+
+    /**
+     * @return every field of the hash, or an empty map when it is absent or Redis is unavailable
+     */
+    Map<String, String> hgetAll(String key);
 
     /**
      * Cursor-based key search. Never {@code KEYS} — that blocks the whole Redis server, and this

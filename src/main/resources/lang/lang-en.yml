@@ -59,6 +59,9 @@ magic:
     settings_updated: "&aSpectator settings updated!"
     target_set: "&7Now tracking &a{player}&7!"
     target_cleared: "&7Target cleared! &fAction bar acts as proximity radar."
+  event:
+    arena_locked: "&cThis arena is reserved for a cross-server event."
+    transferring: "&d✨ Transferring you to &e{server}&d..."
   commands:
     minigame_only: "&cThat command is only available on the Bedwars server."
     no_permission: "&cInsufficient Permissions!"

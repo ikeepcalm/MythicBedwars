@@ -14,9 +14,17 @@ network:
   # Unique per backend. Two servers sharing an id overwrite each other's heartbeat.
   server-id: "bw-1"
 
+  # Server names as they appear in velocity.toml. Requires bungee-plugin-message-channel to be
+  # enabled on the proxy (it is by default).
   velocity:
-    # This backend's name in velocity.toml - where the proxy sends players to reach this server.
+    # This backend's own name - what other servers use to reach it.
     this-server: "bedwars"
+    # Where finished players are sent back to.
+    smp-server: "survival"
+    # Where recruited players are sent.
+    minigame-server: "bedwars"
+    # Ticks between consecutive transfers when moving a whole roster.
+    transfer-stagger-ticks: 5
 
   redis:
     host: "127.0.0.1"
@@ -32,6 +40,26 @@ network:
       max-total: 8
       max-idle: 4
       min-idle: 1
+
+  event:
+    enabled: true
+    # A match below min-players is not worth running; max-players is the roster cap the SMP
+    # advertises, further capped by the chosen arena's real capacity.
+    min-players: 4
+    max-players: 16
+    # How long signups stay open once a host accepts.
+    signup-seconds: 120
+    # Quiet period after an event finishes, so a busy server does not spam offers.
+    cooldown-minutes: 60
+    # How long an event's Redis keys survive without an update. A half-finished event frees itself.
+    event-ttl-seconds: 900
+    # Event matches always run with magic on, bypassing the usual vote.
+    force-magic: true
+    # Empty whitelist means any eligible arena. Blacklist always wins.
+    arena-whitelist: []
+    arena-blacklist: []
+    # Favoured when several arenas fit equally well.
+    prefer-arenas: []
 
   heartbeat:
     # How often this server republishes its liveness key, and how long that key survives without a

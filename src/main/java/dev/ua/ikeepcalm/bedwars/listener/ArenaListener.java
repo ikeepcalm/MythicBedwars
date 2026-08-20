@@ -43,7 +43,8 @@ public class ArenaListener implements Listener {
         MythicBedwars.getInstance().log("Arena status change: " + event.getOldStatus() + " -> " + event.getNewStatus());
 
         if (event.getNewStatus() == ArenaStatus.LOBBY && event.getOldStatus() != ArenaStatus.LOBBY) {
-            if (plugin.getConfigManager().isGloballyEnabled() && plugin.getConfigManager().isArenaEnabled(arena.getName())) {
+            if (plugin.getConfigManager().isGloballyEnabled() && plugin.getConfigManager().isArenaEnabled(arena.getName())
+                && !plugin.isEventArena(arena.getName())) {
                 MythicBedwars.getInstance().log("Starting voting for arena: " + arena.getName());
                 plugin.getVotingManager().startVoting(arena);
             }
@@ -142,7 +143,9 @@ public class ArenaListener implements Listener {
 
         MythicBedwars.getInstance().log("Player " + player.getName() + " joined arena " + arena.getName() + " with status: " + arena.getStatus());
 
-        if (arena.getStatus() == ArenaStatus.LOBBY) {
+        // The first player to join an idle arena would otherwise kick off a vote; an event arena
+        // must skip that entirely.
+        if (arena.getStatus() == ArenaStatus.LOBBY && !plugin.isEventArena(arena.getName())) {
             if (plugin.getVotingManager().hasActiveVoting(arena.getName())) {
                 MythicBedwars.getInstance().log("Giving voting items to late-joining player: " + player.getName());
                 plugin.getVotingManager().giveVotingItems(player, arena);

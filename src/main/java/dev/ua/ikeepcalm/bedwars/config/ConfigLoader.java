@@ -52,6 +52,81 @@ public class ConfigLoader {
         return config.getString("network.velocity.this-server", "");
     }
 
+    /**
+     * @return the Velocity name of the survival server, i.e. where finished players are sent back to
+     */
+    public boolean isEventEnabled() {
+        return config.getBoolean("network.event.enabled", true);
+    }
+
+    public int getEventMinPlayers() {
+        return config.getInt("network.event.min-players", 4);
+    }
+
+    public int getEventMaxPlayers() {
+        return config.getInt("network.event.max-players", 16);
+    }
+
+    public int getEventSignupSeconds() {
+        return config.getInt("network.event.signup-seconds", 120);
+    }
+
+    public int getEventCooldownMinutes() {
+        return config.getInt("network.event.cooldown-minutes", 60);
+    }
+
+    /**
+     * @return how long an event's Redis keys survive without an update, so a half-finished event
+     * cannot block the network forever
+     */
+    public int getEventTtlSeconds() {
+        return config.getInt("network.event.event-ttl-seconds", 900);
+    }
+
+    /**
+     * @return whether event matches always run with magic on, bypassing the usual vote
+     */
+    public boolean isEventForceMagic() {
+        return config.getBoolean("network.event.force-magic", true);
+    }
+
+    /**
+     * @return arenas events may use; empty means any eligible arena
+     */
+    public List<String> getEventArenaWhitelist() {
+        return config.getStringList("network.event.arena-whitelist");
+    }
+
+    public List<String> getEventArenaBlacklist() {
+        return config.getStringList("network.event.arena-blacklist");
+    }
+
+    /**
+     * @return arenas to favour when several fit equally well
+     */
+    public List<String> getPreferredEventArenas() {
+        return config.getStringList("network.event.prefer-arenas");
+    }
+
+    public String getSmpVelocityServer() {
+        return config.getString("network.velocity.smp-server", "survival");
+    }
+
+    /**
+     * @return the Velocity name of the Bedwars server, i.e. where recruits are sent
+     */
+    public String getMinigameVelocityServer() {
+        return config.getString("network.velocity.minigame-server", "bedwars");
+    }
+
+    /**
+     * @return ticks to leave between consecutive transfers, so a whole roster moving at once does
+     * not hit the destination as a login storm
+     */
+    public int getTransferStaggerTicks() {
+        return config.getInt("network.velocity.transfer-stagger-ticks", 5);
+    }
+
     public String getRedisHost() {
         return config.getString("network.redis.host", "127.0.0.1");
     }

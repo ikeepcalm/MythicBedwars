@@ -14,6 +14,11 @@ import dev.ua.ikeepcalm.bedwars.domain.core.ShopManager;
 import dev.ua.ikeepcalm.bedwars.domain.core.StatisticsManager;
 import dev.ua.ikeepcalm.bedwars.domain.reward.CoiCapabilities;
 import dev.ua.ikeepcalm.bedwars.net.NetworkService;
+import dev.ua.ikeepcalm.bedwars.net.event.EventStore;
+import dev.ua.ikeepcalm.bedwars.net.minigame.EventArenaGuard;
+import dev.ua.ikeepcalm.bedwars.net.minigame.EventOrchestrator;
+import dev.ua.ikeepcalm.bedwars.net.smp.RecruitmentManager;
+import dev.ua.ikeepcalm.bedwars.net.velocity.ServerTransferService;
 import dev.ua.ikeepcalm.bedwars.domain.runnable.ActingProgressionTask;
 import dev.ua.ikeepcalm.bedwars.domain.runnable.PathwayVerificationTask;
 import dev.ua.ikeepcalm.bedwars.domain.spectator.SpectatorManager;
@@ -60,6 +65,9 @@ public final class MythicBedwars extends JavaPlugin {
     private CircleOfImaginationAPI circleOfImaginationAPI;
     private CoiCapabilities coiCapabilities;
     private NetworkService networkService;
+    private ServerTransferService transferService;
+    private EventOrchestrator eventOrchestrator;
+    private RecruitmentManager recruitmentManager;
 
     public static MythicBedwars getInstance() {
         return instance;
@@ -78,6 +86,53 @@ public final class MythicBedwars extends JavaPlugin {
      */
     public NetworkService getNetworkService() {
         return this.networkService;
+    }
+
+    public ServerTransferService getTransferService() {
+        return this.transferService;
+    }
+
+    public EventOrchestrator getEventOrchestrator() {
+        return this.eventOrchestrator;
+    }
+
+    /**
+     * @return the arenas currently held for events, or an empty set in any role that is not hosting.
+     * Role-neutral on purpose, so shared code (commands, diagnostics) never has to name a
+     * minigame-only type.
+     */
+    public java.util.Set<String> getReservedArenaNames() {
+        return eventOrchestrator == null ? java.util.Set.of() : eventOrchestrator.reservations().keySet();
+    }
+
+    /**
+     * Releases every arena this server is holding for an event.
+     *
+     * @return how many were released
+     */
+    public int cancelHostedEvents(dev.ua.ikeepcalm.bedwars.net.protocol.CancelReason reason) {
+        if (eventOrchestrator == null) {
+            return 0;
+        }
+
+        var held = eventOrchestrator.reservations();
+        held.values().forEach(reservation -> eventOrchestrator.cancel(reservation.eventId(), reason));
+        return held.size();
+    }
+
+    public RecruitmentManager getRecruitmentManager() {
+        return this.recruitmentManager;
+    }
+
+    /**
+     * Whether an arena is currently reserved for a cross-server event.
+     *
+     * <p>Lives on the plugin class so {@code ArenaListener} and {@code VotingManager} can ask
+     * without importing anything role-specific, and answers a safe {@code false} whenever the event
+     * system is not running.
+     */
+    public boolean isEventArena(String arenaName) {
+        return eventOrchestrator != null && eventOrchestrator.isEventArena(arenaName);
     }
 
     @Override
@@ -111,6 +166,10 @@ public final class MythicBedwars extends JavaPlugin {
                     coiCapabilities.describe());
         }
 
+        // Registered in both roles: the SMP sends recruits out, the minigame server sends them home.
+        transferService = new ServerTransferService(this);
+        transferService.register();
+
         commandManager = new CommandManager(this);
         bindCommand("mythicbedwars", commandManager, commandManager);
 
@@ -127,6 +186,7 @@ public final class MythicBedwars extends JavaPlugin {
         if (configLoader.isNetworkEnabled()) {
             networkService = new NetworkService(this);
             networkService.start();
+            startEventSubsystem();
         }
     }
 
@@ -228,6 +288,26 @@ public final class MythicBedwars extends JavaPlugin {
         log("MythicBedwars enabled!");
     }
 
+    /**
+     * Brings up the half of the event system this role is responsible for. Runs after the network
+     * service, because both halves need the bus to register their handlers on.
+     */
+    private void startEventSubsystem() {
+        EventStore store = new EventStore(networkService.client(), networkService.keys(),
+                configLoader.getEventTtlSeconds());
+
+        if (isMinigameRole()) {
+            eventOrchestrator = new EventOrchestrator(this, networkService, store);
+            eventOrchestrator.registerHandlers();
+            Bukkit.getPluginManager().registerEvents(new EventArenaGuard(this, eventOrchestrator), this);
+            eventOrchestrator.recoverOnBoot();
+        } else {
+            recruitmentManager = new RecruitmentManager(this, networkService, store);
+            recruitmentManager.registerHandlers();
+            recruitmentManager.recoverOnBoot();
+        }
+    }
+
     private void bindCommand(String name, CommandExecutor executor, TabCompleter completer) {
         PluginCommand command = getCommand(name);
         if (command == null) {
@@ -249,6 +329,11 @@ public final class MythicBedwars extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (eventOrchestrator != null) {
+            eventOrchestrator.shutdown();
+            eventOrchestrator = null;
+        }
+
         if (networkService != null) {
             networkService.shutdown();
             networkService = null;
