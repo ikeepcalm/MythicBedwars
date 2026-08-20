@@ -37,12 +37,28 @@ public class SpectatorManager {
     }
 
     private void startUpdateTask() {
+        long period = Math.max(1L, plugin.getConfigManager().getSpectatorUpdateInterval());
+
         updateTask = new BukkitRunnable() {
             @Override
             public void run() {
                 updateSpectatorDisplays();
             }
-        }.runTaskTimer(plugin, 20L, 20L); // Update every second
+        }.runTaskTimer(plugin, period, period);
+    }
+
+    /**
+     * Re-arms the display refresh at the currently configured interval.
+     *
+     * <p>A task's period is fixed when it is scheduled, so picking up a changed
+     * {@code spectator.update-interval-ticks} means replacing the task rather than re-reading a value.
+     */
+    public void restartUpdateTask() {
+        if (updateTask != null) {
+            updateTask.cancel();
+        }
+
+        startUpdateTask();
     }
 
     public void addSpectator(Player player, Arena arena) {

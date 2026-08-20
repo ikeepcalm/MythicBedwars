@@ -17,6 +17,12 @@ public class VotingSession {
     private final MythicBedwars plugin;
     private final Map<UUID, Boolean> votes = new ConcurrentHashMap<>();
     private final VotingReminderTask reminderTask;
+
+    /**
+     * Whether the reminder task was actually scheduled. Needed because {@code BukkitRunnable.cancel()}
+     * throws for a runnable that was never scheduled, and reminders are now optional.
+     */
+    private boolean remindersRunning = false;
     private boolean active = false;
     private boolean magicEnabled = true;
 
@@ -28,7 +34,13 @@ public class VotingSession {
 
     public void start() {
         active = true;
-        reminderTask.runTaskTimerAsynchronously(plugin, 20L, 200L);
+
+        if (plugin.getConfigManager().isVotingRemindersEnabled()) {
+            long period = Math.max(1L, plugin.getConfigManager().getVotingReminderInterval()) * 20L;
+            reminderTask.runTaskTimerAsynchronously(plugin, period, period);
+            remindersRunning = true;
+        }
+
         broadcastMessage("magic.voting.started", NamedTextColor.YELLOW);
         broadcastMessage("magic.voting.instructions", NamedTextColor.GRAY);
     }
@@ -56,7 +68,11 @@ public class VotingSession {
     public void end() {
         if (!active) return;
         active = false;
-        this.reminderTask.cancel();
+
+        if (remindersRunning) {
+            this.reminderTask.cancel();
+            remindersRunning = false;
+        }
 
         int totalPlayers = arena.getPlayers().size();
         int yesVotes = (int) votes.values().stream().filter(vote -> vote).count();

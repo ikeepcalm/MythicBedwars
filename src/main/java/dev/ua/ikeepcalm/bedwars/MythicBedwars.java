@@ -68,6 +68,9 @@ public final class MythicBedwars extends JavaPlugin {
     private BukkitTask periodicSaveTask;
     private EventReaperTask eventReaperTask;
     private EventSyncTask eventSyncTask;
+
+    /** Held so the periodic network tasks can be rebuilt by {@code /mb reload}. */
+    private EventStore eventStore;
     private dev.ua.ikeepcalm.bedwars.net.smp.ReturnGreeter returnGreeter;
     private int saveIntervalSeconds;
 
@@ -367,23 +370,7 @@ public final class MythicBedwars extends JavaPlugin {
         new ActingProgressionTask(this).runTaskTimer(this, 20L, 20L);
         new PathwayVerificationTask(this).runTaskTimer(this, 200L, 400L);
 
-        if (this.saveIntervalSeconds > 0 && database != null && statisticsManager != null) {
-            long saveIntervalTicks = this.saveIntervalSeconds * 20L;
-            this.periodicSaveTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
-                if (database.isConnected() && statisticsManager.getPathwayStatistics() != null && !statisticsManager.getPathwayStatistics().isEmpty()) {
-                    log("Periodically saving statistics...");
-                    database.saveStatistics(statisticsManager.getPathwayStatistics()).thenRun(() -> log("Periodic statistics save complete.")).exceptionally(ex -> {
-                        log("Periodic statistics save failed: " + ex.getMessage());
-                        return null;
-                    });
-                } else if (!database.isConnected()) {
-                    log("Cannot perform periodic statistics save: Database not connected.");
-                }
-            }, saveIntervalTicks, saveIntervalTicks);
-            log("Scheduled periodic statistics save every " + this.saveIntervalSeconds + " seconds.");
-        } else if (this.saveIntervalSeconds <= 0) {
-            log("Periodic statistics saving is disabled (save-interval-seconds <= 0).");
-        }
+        scheduleStatisticsSave();
 
         log("MythicBedwars enabled!");
     }
@@ -441,6 +428,46 @@ public final class MythicBedwars extends JavaPlugin {
         return Bukkit.getServer().getServicesManager().load(CircleOfImaginationAPI.class);
     }
 
+
+    /**
+     * (Re)schedules the periodic statistics save at the currently configured interval.
+     *
+     * <p>Reads {@code statistics.save-interval-seconds} on every call rather than trusting the value
+     * captured at startup, so {@code /mb reload} can change the cadence — or switch it off.
+     */
+    private void scheduleStatisticsSave() {
+        if (periodicSaveTask != null) {
+            periodicSaveTask.cancel();
+            periodicSaveTask = null;
+        }
+
+        this.saveIntervalSeconds = configLoader.getAutoSaveInterval();
+
+        if (this.saveIntervalSeconds <= 0) {
+            log("Periodic statistics saving is disabled (save-interval-seconds <= 0).");
+            return;
+        }
+
+        if (database == null || statisticsManager == null) {
+            return;
+        }
+
+        long saveIntervalTicks = this.saveIntervalSeconds * 20L;
+        this.periodicSaveTask = Bukkit.getScheduler().runTaskTimerAsynchronously(this, () -> {
+            if (database.isConnected() && statisticsManager.getPathwayStatistics() != null && !statisticsManager.getPathwayStatistics().isEmpty()) {
+                log("Periodically saving statistics...");
+                database.saveStatistics(statisticsManager.getPathwayStatistics()).thenRun(() -> log("Periodic statistics save complete.")).exceptionally(ex -> {
+                    log("Periodic statistics save failed: " + ex.getMessage());
+                    return null;
+                });
+            } else if (!database.isConnected()) {
+                log("Cannot perform periodic statistics save: Database not connected.");
+            }
+        }, saveIntervalTicks, saveIntervalTicks);
+
+        log("Scheduled periodic statistics save every " + this.saveIntervalSeconds + " seconds.");
+    }
+
     /**
      * Brings up the half of the event system this role is responsible for. Runs after the network
      * service, because both halves need the bus to register their handlers on.
@@ -486,13 +513,73 @@ public final class MythicBedwars extends JavaPlugin {
             recruitmentManager.recoverOnBoot();
         }
 
-        long reapTicks = Math.max(1, configLoader.getEventReapIntervalSeconds()) * 20L;
-        eventReaperTask = new EventReaperTask(this, networkService, store);
+        this.eventStore = store;
+        scheduleNetworkTasks();
+    }
+
+    /**
+     * (Re)schedules the reaper and the reconciliation pass.
+     *
+     * <p>Both are {@code BukkitRunnable}s, which can only be scheduled once, and both snapshot config
+     * values in their constructors because they run off the main thread — so picking up a changed
+     * interval means building new instances rather than re-reading a field.
+     */
+    private void scheduleNetworkTasks() {
+        if (networkService == null || eventStore == null) {
+            return;
+        }
+
+        if (eventReaperTask != null) {
+            eventReaperTask.cancel();
+        }
+        if (eventSyncTask != null) {
+            eventSyncTask.cancel();
+        }
+
+        long reapTicks = Math.max(1L, configLoader.getEventReapIntervalSeconds()) * 20L;
+        eventReaperTask = new EventReaperTask(this, networkService, eventStore);
         eventReaperTask.runTaskTimerAsynchronously(this, reapTicks, reapTicks);
 
         long syncTicks = Math.max(1L, configLoader.getEventSyncIntervalSeconds()) * 20L;
-        eventSyncTask = new EventSyncTask(this, store);
+        eventSyncTask = new EventSyncTask(this, eventStore);
         eventSyncTask.runTaskTimerAsynchronously(this, syncTicks, syncTicks);
+    }
+
+    /**
+     * Re-arms everything whose schedule is fixed at the moment it is created, so a config change can
+     * take effect without a restart.
+     *
+     * <p>Deliberately does <b>not</b> touch the Redis connection, the network role, or the registered
+     * listeners. Reconnecting a live pool or re-registering handlers underneath an in-flight event
+     * trades a restart for a class of failure that is much harder to reason about; those keys stay
+     * restart-only on purpose.
+     *
+     * @return a short description of what was re-armed, for the command to report
+     */
+    public java.util.List<String> reloadScheduledTasks() {
+        java.util.List<String> rearmed = new ArrayList<>();
+
+        if (networkService != null && eventStore != null) {
+            scheduleNetworkTasks();
+            rearmed.add("event reaper + sync");
+        }
+
+        if (recruitmentManager != null) {
+            recruitmentManager.startAutoPropose();
+            rearmed.add("auto-propose");
+        }
+
+        if (statisticsManager != null && database != null) {
+            scheduleStatisticsSave();
+            rearmed.add("statistics save");
+        }
+
+        if (spectatorManager != null) {
+            spectatorManager.restartUpdateTask();
+            rearmed.add("spectator display");
+        }
+
+        return rearmed;
     }
 
     private CompletableFuture<Void> loadStatistics() {

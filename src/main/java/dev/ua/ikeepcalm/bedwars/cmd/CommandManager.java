@@ -114,7 +114,20 @@ public class CommandManager implements CommandExecutor, TabCompleter {
             plugin.getRewardConfig().load();
         }
 
+        // A repeating task's period is fixed when it is scheduled, so re-reading the config is not
+        // enough on its own — anything driven by an interval has to be replaced.
+        List<String> rearmed = plugin.reloadScheduledTasks();
+
         sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.config_reloaded"));
+
+        if (!rearmed.isEmpty()) {
+            sender.sendMessage(plugin.getLocaleManager().formatMessage(
+                    "magic.commands.tasks_rearmed", "tasks", String.join(", ", rearmed)));
+        }
+
+        // Worth saying out loud: these look like ordinary settings, and an operator who changes one
+        // and sees no effect will reasonably assume the reload failed.
+        sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.reload_restart_only"));
     }
 
     private void sendHelpMessage(CommandSender sender) {

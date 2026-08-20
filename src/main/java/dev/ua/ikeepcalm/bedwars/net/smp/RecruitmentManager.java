@@ -115,6 +115,13 @@ public class RecruitmentManager implements dev.ua.ikeepcalm.bedwars.net.EventPar
      * feature built to revive a dead server ends up never running.
      */
     public void startAutoPropose() {
+        // Idempotent, so /mb reload can re-arm it at a new interval, switch it on, or switch it off.
+        BukkitTask existing = autoProposeTask;
+        if (existing != null) {
+            existing.cancel();
+            autoProposeTask = null;
+        }
+
         if (!plugin.getConfigManager().isEventAutoProposeEnabled()) {
             return;
         }

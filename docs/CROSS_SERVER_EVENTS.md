@@ -116,6 +116,38 @@ acting:
 
 ---
 
+## What `/mb reload` does and does not pick up
+
+`/mb reload` re-reads `config.yml`, both language files and `rewards.yml`, then re-arms every task
+whose interval is fixed when it is scheduled. It reports which ones it re-armed, and reminds you
+what is still restart-only.
+
+**Takes effect immediately.** Everything under `acting:`, `pathways:`, `voting:`, `spectator:`,
+`global:`, `arenas:`, `shop:`, the whole of `rewards.yml`, and all the per-event settings:
+`min-players`, `max-players`, `signup-seconds`, `arrival-grace-seconds`, `fill-window-seconds`,
+`lobby-hold-seconds`, `start-countdown-seconds`, `min-arrivals`, `auto-return-seconds`,
+`winner-return-delay-seconds`, `cooldown-minutes`, `event-ttl-seconds`, `force-magic`,
+`preferred-team-count`, the arena filters, `allow-spectators`, `announce-locally`,
+`auto-propose*`, `idle-threshold-seconds`, `reap-interval-seconds`, `sync-interval-seconds`,
+`propose-timeout-seconds`, `statistics.save-interval-seconds`, and the two target Velocity names.
+
+**Still needs a restart**, because each is consumed once while wiring the plugin up:
+
+| Key | Consumed by |
+|---|---|
+| `network.enabled` | decides whether the event subsystem boots at all |
+| `network.role` | decides which listeners and managers exist |
+| `network.server-id` | `NetworkService` constructor |
+| `network.redis.*` | the connection pool, built once in `client.start()` |
+| `network.redis.namespace` | `RedisKeys`, built with the service |
+| `network.velocity.this-server` | published in every heartbeat |
+| `network.heartbeat.*` | task period and constructor arguments |
+
+Reconnecting a live pool or re-registering listeners underneath an in-flight event would trade a
+restart for a class of failure that is much harder to reason about, so those are deliberate.
+
+---
+
 ## Commands
 
 `/mythicbedwars` is **not** permission-gated as a command — Bukkit would reject an ordinary player

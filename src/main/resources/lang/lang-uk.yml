@@ -127,6 +127,8 @@ magic:
     player_not_found: "Гравець не знайдений!"
     target_not_in_arena: "Цільовий гравець не в цій арені!"
     config_reloaded: "Конфігурацію перезавантажено!"
+    tasks_rearmed: "&8Перезапущено: &7{tasks}"
+    reload_restart_only: "&8Налаштування Redis, network.role і network.enabled усе ще потребують перезапуску."
     global_enabled: "MythicBedwars увімкнено глобально!"
     global_disabled: "MythicBedwars вимкнено глобально!"
     arena_enabled: "MythicBedwars увімкнено для арени {arena}"

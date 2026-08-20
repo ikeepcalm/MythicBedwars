@@ -127,6 +127,8 @@ magic:
     player_not_found: "&cPlayer not found!"
     target_not_in_arena: "&cTarget player is not in this arena!"
     config_reloaded: "&aConfiguration successfully reloaded!"
+    tasks_rearmed: "&8Re-armed: &7{tasks}"
+    reload_restart_only: "&8Redis settings, network.role and network.enabled still need a restart."
     global_enabled: "&2Global: &aMythicBedwars Enabled!"
     global_disabled: "&4Global: &cMythicBedwars Disabled!"
     arena_enabled: "&aMythicBedwars enabled for arena &e{arena}"
