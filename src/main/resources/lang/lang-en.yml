@@ -15,6 +15,9 @@ magic:
     no_acting: "&cNot yet worthy. &7You must reach &e100% Acting &7before ascending!"
     death_penalty: "&c💀 &7Death cost you &c{amount} Acting&7."
     sequence_advanced: "&5✨ &d{player} &7ascended to &5Sequence {sequence} &7({pathway})!"
+  pathway_assigned:
+    title: "&5✦ &d{pathway}"
+    subtitle: "&7Kill for &fActing &8•&7 buy &dElixirs &7to ascend"
   summary:
     header: "&5━━━ &dMagic Summary &5━━━"
     pathway: "&7Pathway: &5{pathway}"

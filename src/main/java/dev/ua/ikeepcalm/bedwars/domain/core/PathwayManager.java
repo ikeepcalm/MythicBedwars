@@ -6,15 +6,23 @@ import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.domain.balancer.PathwayBalancer;
+import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
+import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class PathwayManager {
 
+    private static final long ANNOUNCE_DELAY_TICKS = 40L;
+    private static final long ANNOUNCE_COOLDOWN_MILLIS = 5_000L;
+
+    private final Map<UUID, Long> lastAnnouncement = new ConcurrentHashMap<>();
     private final Map<String, Map<Team, String>> arenaPathways = new ConcurrentHashMap<>();
+    private final Map<String, Set<Team>> arenaPlayedTeams = new ConcurrentHashMap<>();
     private final Map<UUID, PlayerMagicData> playerData = new ConcurrentHashMap<>();
     private final Map<String, Set<UUID>> arenaPlayers = new ConcurrentHashMap<>();
     private final Map<UUID, String> playerArenaCache = new ConcurrentHashMap<>();
@@ -23,7 +31,7 @@ public class PathwayManager {
 
     public void assignPathwaysToTeams(Arena arena) {
         PathwayBalancer balancer = MythicBedwars.getInstance().getPathwayBalancer();
-        Map<Team, String> teamPathways = balancer.assignBalancedPathways(arena);
+        Map<Team, String> teamPathways = new ConcurrentHashMap<>(balancer.assignBalancedPathways(arena));
         arenaPathways.put(arena.getName(), teamPathways);
     }
 
@@ -52,12 +60,95 @@ public class PathwayManager {
         return null;
     }
 
+    /**
+     * Returns the teams that actually fielded a player this round.
+     *
+     * <p>Pathways are handed to every team the arena has enabled, including ones that end up
+     * empty, so this deliberately reports the narrower set: crediting a win or a loss to a
+     * pathway nobody played would feed the balancer noise.
+     */
     public Set<Team> getAllParticipatingTeams(Arena arena) {
-        Map<Team, String> teamPathways = arenaPathways.get(arena.getName());
-        if (teamPathways != null) {
-            return teamPathways.keySet();
+        Set<Team> playedTeams = arenaPlayedTeams.get(arena.getName());
+        if (playedTeams != null) {
+            return Set.copyOf(playedTeams);
         }
         return Collections.emptySet();
+    }
+
+    /**
+     * Resolves the team's pathway, assigning one on the spot if the round's distribution somehow
+     * missed this team.
+     */
+    private String resolveTeamPathway(Arena arena, Team team) {
+        Map<Team, String> teamPathways = arenaPathways.computeIfAbsent(arena.getName(), k -> new ConcurrentHashMap<>());
+
+        String pathway = teamPathways.get(team);
+        if (pathway != null) {
+            return pathway;
+        }
+
+        String picked = MythicBedwars.getInstance().getPathwayBalancer().pickPathway(List.copyOf(teamPathways.values()));
+        if (picked == null) {
+            return null;
+        }
+
+        String existing = teamPathways.putIfAbsent(team, picked);
+        if (existing != null) {
+            return existing;
+        }
+
+        MythicBedwars.getInstance().log("Team " + team.getDisplayName() + " in arena " + arena.getName() +
+                                                        " had no pathway, assigned " + picked);
+        return picked;
+    }
+
+    /**
+     * Records that the team fielded a player whose loadout actually opened, which is what makes
+     * its pathway eligible for the round's statistics.
+     */
+    private void markTeamPlayed(Arena arena, Team team) {
+        arenaPlayedTeams.computeIfAbsent(arena.getName(), k -> ConcurrentHashMap.newKeySet()).add(team);
+    }
+
+    /**
+     * Tells the player which pathway they are holding and how to grow it.
+     *
+     * <p>Deliberately delayed: the loadout opens as the round starts, in the same window MBedwars
+     * puts its own start title on screen, and a title pushed into that window just gets replaced.
+     */
+    private void announcePathway(Player player, String pathway) {
+        MythicBedwars plugin = MythicBedwars.getInstance();
+
+        // The round-start pass and PlayerTeamChangeEvent both reach initializePlayerMagic, so the
+        // same player can land here twice within a second - one title, not two.
+        long now = System.currentTimeMillis();
+        Long last = lastAnnouncement.put(player.getUniqueId(), now);
+        if (last != null && now - last < ANNOUNCE_COOLDOWN_MILLIS) {
+            return;
+        }
+
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (!player.isOnline()) {
+                return;
+            }
+
+            player.showTitle(Title.title(
+                    plugin.getLocaleManager().formatMessage(player, "magic.pathway_assigned.title",
+                            "pathway", displayName(pathway)),
+                    plugin.getLocaleManager().formatMessage(player, "magic.pathway_assigned.subtitle"),
+                    Title.Times.times(Duration.ofMillis(300), Duration.ofSeconds(3), Duration.ofMillis(500))));
+
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.6f, 1.2f);
+        }, ANNOUNCE_DELAY_TICKS);
+    }
+
+    /** Pathway names arrive from COI lowercase ("fortune"), which reads as a typo in a title. */
+    private String displayName(String pathway) {
+        if (pathway.isEmpty()) {
+            return pathway;
+        }
+
+        return Character.toUpperCase(pathway.charAt(0)) + pathway.substring(1);
     }
 
     public void initializePlayerMagic(Player player, Arena arena, Team team) {
@@ -68,9 +159,9 @@ public class PathwayManager {
             assignPathwaysToTeams(arena);
         }
 
-        String pathway = getTeamPathway(arena, team);
+        String pathway = resolveTeamPathway(arena, team);
         if (pathway == null) {
-            MythicBedwars.getInstance().log("No pathway assigned to team " + team.getDisplayName() +
+            MythicBedwars.getInstance().log("No pathway could be assigned to team " + team.getDisplayName() +
                                                             " in arena " + arena.getName() + " for player " + player.getName());
             return;
         }
@@ -82,6 +173,9 @@ public class PathwayManager {
             if (!enterSandbox(player, pathway, existingData.getCurrentSequence())) {
                 return;
             }
+
+            markTeamPlayed(arena, team);
+            announcePathway(player, pathway);
 
             if (!pathway.equals(existingData.getPathway())) {
                 MythicBedwars.getInstance().log("Player " + player.getName() +
@@ -118,6 +212,9 @@ public class PathwayManager {
         if (!enterSandbox(player, pathway, 9)) {
             return;
         }
+
+        markTeamPlayed(arena, team);
+        announcePathway(player, pathway);
 
         PlayerMagicData data = new PlayerMagicData(playerId, pathway, arena.getName());
         playerData.put(playerId, data);
@@ -178,11 +275,13 @@ public class PathwayManager {
             circleOfImaginationAPI.exitVirtualBeyonder(player);
         }
         playerArenaCache.remove(playerId);
+        lastAnnouncement.remove(playerId);
     }
 
     public void cleanupArena(Arena arena) {
         String arenaName = arena.getName();
         arenaPathways.remove(arenaName);
+        arenaPlayedTeams.remove(arenaName);
 
         Set<UUID> players = arenaPlayers.remove(arenaName);
         if (players != null) {
@@ -193,6 +292,7 @@ public class PathwayManager {
                 }
                 playerData.remove(playerId);
                 playerArenaCache.remove(playerId);
+                lastAnnouncement.remove(playerId);
             }
         }
     }
@@ -206,8 +306,10 @@ public class PathwayManager {
         }
         playerData.clear();
         arenaPathways.clear();
+        arenaPlayedTeams.clear();
         arenaPlayers.clear();
         playerArenaCache.clear();
+        lastAnnouncement.clear();
     }
 
     public PlayerMagicData getPlayerData(Player player) {

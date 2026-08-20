@@ -68,6 +68,11 @@ public class ArenaListener implements Listener {
                             if (delayedTeam != null && plugin.getVotingManager().isMagicEnabled(arena.getName())) {
                                 MythicBedwars.getInstance().log("Initializing delayed magic for player " + player.getName() + " on team " + delayedTeam.getDisplayName());
                                 plugin.getArenaPathwayManager().initializePlayerMagic(player, arena, delayedTeam);
+                            } else if (delayedTeam == null) {
+                                // Their team arrives later than this one retry, so PlayerTeamChangeEvent
+                                // is the only thing left that can still open their loadout.
+                                MythicBedwars.getInstance().log("Player " + player.getName() + " still has no team in arena "
+                                                                + arena.getName() + ", waiting for the team change event");
                             }
                         }, 20L);
                     }

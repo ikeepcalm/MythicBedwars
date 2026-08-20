@@ -15,6 +15,9 @@ magic:
     no_acting: "Ви ще не готові до нового рівня. Спочатку отримайте 100% Виступу!"
     death_penalty: "💀 Смерть коштувала вам {amount} Виступу."
     sequence_advanced: "✨ {player} піднявся до Послідовності {sequence} ({pathway})!"
+  pathway_assigned:
+    title: "✦ {pathway}"
+    subtitle: "Вбивайте за Виступ • купуйте Зілля, щоб піднятись"
   summary:
     header: "━━━ Магічний Підсумок ━━━"
     pathway: "Шлях: {pathway}"

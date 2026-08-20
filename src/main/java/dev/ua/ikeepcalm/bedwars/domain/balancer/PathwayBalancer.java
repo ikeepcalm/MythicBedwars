@@ -24,12 +24,92 @@ public class PathwayBalancer {
             return assignRandomPathways(arena);
         }
 
-        List<String> availablePathways = getBalancedPathwayPool();
-        Map<Team, String> assignments = new HashMap<>();
+        Map<Team, String> assignments = distribute(arena, getBalancedPathwayPool());
 
-        // Collect teams from players instead of using getAliveTeams()
-        // because teams aren't marked as "alive" yet when game just started
-        Set<Team> teams = new HashSet<>();
+        plugin.log("Assigned balanced pathways for arena " + arena.getName() + ": " + describe(assignments));
+
+        return assignments;
+    }
+
+    private Map<Team, String> assignRandomPathways(Arena arena) {
+        Map<Team, String> assignments = distribute(arena, getAllowedPathways());
+
+        plugin.log("Assigned random pathways for arena " + arena.getName() + ": " + describe(assignments));
+
+        return assignments;
+    }
+
+    /**
+     * Picks one pathway for a team the round's initial distribution did not cover, preferring one
+     * that no other team of the arena is already running.
+     *
+     * @param alreadyAssigned the pathways the arena's other teams hold
+     * @return the pathway to use, or {@code null} when no pathway is available at all
+     */
+    public String pickPathway(Collection<String> alreadyAssigned) {
+        List<String> pool = plugin.getConfigManager().isPathwayBalancingEnabled()
+                ? getBalancedPathwayPool()
+                : getAllowedPathways();
+
+        if (pool.isEmpty()) {
+            return null;
+        }
+
+        Collections.shuffle(pool);
+
+        Set<String> used = new HashSet<>(alreadyAssigned);
+        for (String pathway : pool) {
+            if (!used.contains(pathway)) {
+                return pathway;
+            }
+        }
+
+        return pool.getFirst();
+    }
+
+    /**
+     * Hands every team of the arena exactly one pathway, distinct per team for as long as the pool
+     * has distinct entries left to give.
+     */
+    private Map<Team, String> distribute(Arena arena, List<String> pool) {
+        List<Team> teams = new ArrayList<>(collectTeams(arena));
+        Collections.shuffle(teams);
+
+        Map<Team, String> assignments = new LinkedHashMap<>();
+
+        if (teams.isEmpty()) {
+            return assignments;
+        }
+
+        List<String> picks = drawDistinct(pool, teams.size());
+        if (picks.isEmpty()) {
+            plugin.log("No pathway is available for arena " + arena.getName() + ", check the allowed pathway list");
+            return assignments;
+        }
+
+        for (int i = 0; i < teams.size(); i++) {
+            assignments.put(teams.get(i), picks.get(i));
+        }
+
+        return assignments;
+    }
+
+    /**
+     * Collects the teams that need a pathway.
+     *
+     * <p>Teams are what MBedwars hands to players as the round starts, so a set derived from
+     * {@link Arena#getPlayerTeam(org.bukkit.entity.Player)} at the {@code LOBBY -> RUNNING}
+     * transition holds only the teams players picked themselves - everyone the auto balancer
+     * places a tick later is still team-less, and so their team is missing from the assignment.
+     * The arena's enabled teams are known up front and cannot change mid-round, which makes them
+     * the only snapshot that is already complete at this point.
+     */
+    private Set<Team> collectTeams(Arena arena) {
+        Set<Team> teams = new HashSet<>(arena.getEnabledTeams());
+        if (!teams.isEmpty()) {
+            return teams;
+        }
+
         for (var player : arena.getPlayers()) {
             Team team = arena.getPlayerTeam(player);
             if (team != null) {
@@ -37,23 +117,68 @@ public class PathwayBalancer {
             }
         }
 
-        List<Team> teamList = new ArrayList<>(teams);
-        Collections.shuffle(teamList);
+        return teams;
+    }
 
-        for (int i = 0; i < teamList.size(); i++) {
-            if (i >= availablePathways.size()) {
-                Collections.shuffle(availablePathways);
-                i = i % availablePathways.size();
+    /**
+     * Draws up to {@code count} distinct pathways out of a weighted pool.
+     *
+     * <p>The pool repeats a pathway once per weight point, so shuffling it and keeping only the
+     * first occurrence of each name is a weighted draw without replacement: a heavier pathway is
+     * more likely to land early, yet it can still only be handed out once.
+     *
+     * <p>The result repeats a pathway only when the pool holds fewer distinct ones than there are
+     * teams, which is the single case where two teams sharing a pathway is unavoidable.
+     */
+    private List<String> drawDistinct(List<String> pool, int count) {
+        List<String> shuffled = new ArrayList<>(pool);
+        Collections.shuffle(shuffled);
+
+        List<String> picks = new ArrayList<>(count);
+        Set<String> used = new HashSet<>();
+
+        for (String pathway : shuffled) {
+            if (used.add(pathway)) {
+                picks.add(pathway);
+
+                if (picks.size() == count) {
+                    return picks;
+                }
             }
-            assignments.put(teamList.get(i), availablePathways.get(i));
         }
 
-        plugin.log("Assigned balanced pathways for arena " + arena.getName() + ": " +
-                                assignments.entrySet().stream()
-                                        .map(entry -> entry.getKey().getDisplayName() + "=" + entry.getValue())
-                                        .collect(Collectors.joining(", ")));
+        int distinct = picks.size();
+        if (distinct == 0) {
+            return picks;
+        }
 
-        return assignments;
+        while (picks.size() < count) {
+            picks.add(picks.get(picks.size() % distinct));
+        }
+
+        return picks;
+    }
+
+    private String describe(Map<Team, String> assignments) {
+        if (assignments.isEmpty()) {
+            return "none";
+        }
+
+        return assignments.entrySet().stream()
+                .map(entry -> entry.getKey().getDisplayName() + "=" + entry.getValue())
+                .collect(Collectors.joining(", "));
+    }
+
+    private List<String> getAllowedPathways() {
+        List<String> allowed = circleOfImaginationAPI.getAllPathwayNames().stream()
+                .filter(plugin.getConfigManager()::isPathwayAllowed)
+                .collect(Collectors.toList());
+
+        if (allowed.isEmpty()) {
+            return new ArrayList<>(circleOfImaginationAPI.getAllPathwayNames());
+        }
+
+        return allowed;
     }
 
     private List<String> getBalancedPathwayPool() {
@@ -113,49 +238,6 @@ public class PathwayBalancer {
             // Balanced pathways get normal weight
             return 2;
         }
-    }
-
-    private Map<Team, String> assignRandomPathways(Arena arena) {
-        Map<Team, String> teamPathways = new HashMap<>();
-        List<String> availablePathways = circleOfImaginationAPI.getAllPathwayNames().stream()
-                .filter(plugin.getConfigManager()::isPathwayAllowed)
-                .collect(Collectors.toList());
-
-        if (availablePathways.isEmpty()) {
-            availablePathways = new ArrayList<>(circleOfImaginationAPI.getAllPathwayNames());
-        }
-
-        Collections.shuffle(availablePathways);
-
-        // Collect teams from players instead of using getAliveTeams()
-        // because teams aren't marked as "alive" yet when game just started
-        Set<Team> teams = new HashSet<>();
-        for (var player : arena.getPlayers()) {
-            Team team = arena.getPlayerTeam(player);
-            if (team != null) {
-                teams.add(team);
-            }
-        }
-
-        List<Team> teamList = new ArrayList<>(teams);
-        Collections.shuffle(teamList);
-
-        int index = 0;
-        for (Team team : teamList) {
-            if (index >= availablePathways.size()) {
-                Collections.shuffle(availablePathways);
-                index = 0;
-            }
-            teamPathways.put(team, availablePathways.get(index));
-            index++;
-        }
-
-        plugin.log("Assigned random pathways for arena " + arena.getName() + ": " +
-                                teamPathways.entrySet().stream()
-                                        .map(entry -> entry.getKey().getDisplayName() + "=" + entry.getValue())
-                                        .collect(Collectors.joining(", ")));
-
-        return teamPathways;
     }
 
     public void printBalanceReport() {
