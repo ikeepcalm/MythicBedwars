@@ -1,6 +1,7 @@
 package dev.ua.ikeepcalm.bedwars.net.protocol.payload;
 
-import dev.ua.ikeepcalm.bedwars.net.protocol.CancelReason;
+import dev.ua.ikeepcalm.bedwars.net.protocol.source.CancelReason;
+import dev.ua.ikeepcalm.bedwars.net.protocol.source.ReturnOutcome;
 
 /**
  * The typed bodies carried inside {@link dev.ua.ikeepcalm.bedwars.net.protocol.Envelope#data()}.
@@ -58,6 +59,80 @@ public final class Payloads {
     public record Reject(
             String minigameServerId,
             String reason
+    ) {
+    }
+
+    /**
+     * Either side: somebody joined the roster.
+     *
+     * <p>Purely a notification for live counters — the Redis roster set stays authoritative, so a
+     * dropped one of these costs an out-of-date number and nothing else.
+     */
+    public record RosterAdd(
+            String uuid,
+            String name,
+            int count
+    ) {
+    }
+
+    /**
+     * SMP -> minigame: signups are closed, this is who is coming.
+     */
+    public record RosterClosed(
+            java.util.List<String> roster,
+            int count
+    ) {
+    }
+
+    /**
+     * Minigame -> SMP: the arena is reserved and held; start moving people.
+     */
+    public record ArenaReady(
+            String minigameServerId,
+            String minigameServerName,
+            String arenaName,
+            long transferDeadline
+    ) {
+    }
+
+    /**
+     * Minigame -> SMP: one recruit made it. Throttled; the arrived set is authoritative.
+     */
+    public record PlayerArrived(
+            String uuid,
+            int arrived,
+            int expected
+    ) {
+    }
+
+    /**
+     * Minigame -> SMP: the match is under way.
+     */
+    public record EventStarted(
+            String arenaName,
+            int playerCount
+    ) {
+    }
+
+    /**
+     * Minigame -> SMP: the authoritative result, published before anybody is moved.
+     */
+    public record EventFinished(
+            String arenaName,
+            boolean tie,
+            String winnerTeam,
+            java.util.List<String> winners,
+            java.util.List<String> losers,
+            long durationMs
+    ) {
+    }
+
+    /**
+     * Minigame -> SMP: this player is on their way home with this outcome.
+     */
+    public record PlayerReturn(
+            String uuid,
+            ReturnOutcome outcome
     ) {
     }
 

@@ -1,4 +1,4 @@
-package dev.ua.ikeepcalm.bedwars.net.protocol;
+package dev.ua.ikeepcalm.bedwars.net.protocol.source;
 
 /**
  * Every message that crosses the Redis control bus.

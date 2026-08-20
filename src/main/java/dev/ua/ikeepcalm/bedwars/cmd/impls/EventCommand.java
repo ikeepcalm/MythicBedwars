@@ -2,14 +2,14 @@ package dev.ua.ikeepcalm.bedwars.cmd.impls;
 
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.net.NetworkService;
-import dev.ua.ikeepcalm.bedwars.net.protocol.CancelReason;
 import dev.ua.ikeepcalm.bedwars.net.protocol.Heartbeat;
+import dev.ua.ikeepcalm.bedwars.net.protocol.source.CancelReason;
 import dev.ua.ikeepcalm.bedwars.net.smp.RecruitmentManager;
-import org.bukkit.entity.Player;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 
 import java.util.List;
 import java.util.stream.Stream;
@@ -22,7 +22,7 @@ import java.util.stream.Stream;
  */
 public class EventCommand {
 
-    public static final List<String> SUBCOMMANDS = List.of("status", "start", "cancel", "send");
+    public static final List<String> SUBCOMMANDS = List.of("status", "join", "preview", "start", "cancel", "send");
 
     private final MythicBedwars plugin;
 
@@ -41,6 +41,8 @@ public class EventCommand {
 
         switch (args[1].toLowerCase()) {
             case "status" -> handleStatus(sender);
+            case "join" -> handleJoin(sender);
+            case "preview" -> handlePreview(sender);
             case "start" -> handleStart(sender);
             case "cancel" -> handleCancel(sender);
             case "send" -> handleSend(sender, args);
@@ -50,6 +52,10 @@ public class EventCommand {
 
     public void sendHelp(CommandSender sender) {
         sender.sendMessage(Component.text("/mb event status - Cross-server link diagnostics", NamedTextColor.YELLOW));
+        sender.sendMessage(Component.text("/mb event join - Sign up for the event being advertised",
+                NamedTextColor.YELLOW));
+        sender.sendMessage(Component.text("/mb event preview - Show the announcement without starting anything",
+                NamedTextColor.YELLOW));
         sender.sendMessage(Component.text("/mb event start - Ask a Bedwars server to host an event (SMP only)",
                 NamedTextColor.YELLOW));
         sender.sendMessage(Component.text("/mb event cancel - Call off the event in flight", NamedTextColor.YELLOW));
@@ -78,6 +84,40 @@ public class EventCommand {
         }
 
         return List.of();
+    }
+
+    /**
+     * The relog-proof way in: chat click callbacks die with the connection that rendered them, so a
+     * player who reconnects mid-drive still needs a way to sign up.
+     */
+    private void handleJoin(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.player_only"));
+            return;
+        }
+
+        RecruitmentManager recruitment = plugin.getRecruitmentManager();
+        if (recruitment == null) {
+            sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.event.signup.closed"));
+            return;
+        }
+
+        if (!player.hasPermission("mythicbedwars.event.join")) {
+            sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.no_permission"));
+            return;
+        }
+
+        recruitment.join(player);
+    }
+
+    private void handlePreview(CommandSender sender) {
+        RecruitmentManager recruitment = plugin.getRecruitmentManager();
+        if (recruitment == null) {
+            sender.sendMessage(Component.text("Only the SMP server advertises events.", NamedTextColor.RED));
+            return;
+        }
+
+        recruitment.previewAnnouncement(sender);
     }
 
     private void handleStart(CommandSender sender) {

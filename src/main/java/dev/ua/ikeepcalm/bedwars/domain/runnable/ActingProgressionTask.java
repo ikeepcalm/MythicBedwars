@@ -4,11 +4,11 @@ import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
 import de.marcely.bedwars.api.arena.ArenaStatus;
 import de.marcely.bedwars.api.arena.Team;
+import dev.ua.ikeepcalm.bedwars.MythicBedwars;
+import dev.ua.ikeepcalm.bedwars.domain.core.PathwayManager;
 import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
 import dev.ua.ikeepcalm.coi.api.model.PathwayData;
-import dev.ua.ikeepcalm.bedwars.MythicBedwars;
-import dev.ua.ikeepcalm.bedwars.domain.core.PathwayManager;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -29,7 +29,14 @@ public class ActingProgressionTask extends BukkitRunnable {
             if (arena.getStatus() != ArenaStatus.RUNNING) continue;
             if (!plugin.getVotingManager().isMagicEnabled(arena.getName())) continue;
 
+            // Folded into the existing 1Hz loop rather than adding a second timer.
+            boolean eventArena = plugin.isEventArena(arena.getName());
+
             for (Player player : arena.getPlayers()) {
+                if (eventArena && plugin.getRewardService() != null) {
+                    plugin.getRewardService().tracker().sample(arena.getName(), player);
+                }
+
                 PathwayManager.PlayerMagicData data = plugin.getArenaPathwayManager().getPlayerData(player);
                 if (data == null || !data.isActive()) continue;
                 if (!circleOfImaginationAPI.isBeyonder(player)) continue;

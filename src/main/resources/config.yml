@@ -48,7 +48,30 @@ network:
     min-players: 4
     max-players: 16
     # How long signups stay open once a host accepts.
+    # Read by the MINIGAME role only: the host commits to holding its arena until this deadline and
+    # sends it in its acceptance, so the SMP honours the host's value rather than its own.
     signup-seconds: 120
+    # Seconds-remaining marks at which to re-broadcast the offer.
+    signup-reminders: [ 90, 60, 30, 10 ]
+    # How long to wait for a Bedwars server to answer a proposal.
+    propose-timeout-seconds: 10
+    # How long the host holds its arena open for recruits to cross the proxy.
+    arrival-grace-seconds: 60
+    # After the arrival window, how long spare slots stay open to players already on the Bedwars
+    # server. Set to 0 to keep event matches strictly roster-only.
+    fill-window-seconds: 20
+    # Countdown pushed out each second so MBedwars never auto-starts a held arena.
+    lobby-hold-seconds: 120
+    # Visible countdown once the match is actually going ahead.
+    start-countdown-seconds: 5
+    # Fewest arrivals worth starting with, however many signed up.
+    min-arrivals: 4
+    # How long an eliminated player may linger before being sent home automatically.
+    auto-return-seconds: 30
+    # Pause after the final kill before winners are moved, so the celebration is not cut short.
+    winner-return-delay-seconds: 15
+    # How often stale or orphaned events are swept up.
+    reap-interval-seconds: 30
     # Quiet period after an event finishes, so a busy server does not spam offers.
     cooldown-minutes: 60
     # How long an event's Redis keys survive without an update. A half-finished event frees itself.

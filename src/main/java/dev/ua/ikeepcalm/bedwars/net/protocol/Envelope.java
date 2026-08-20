@@ -1,6 +1,7 @@
 package dev.ua.ikeepcalm.bedwars.net.protocol;
 
 import com.google.gson.JsonObject;
+import dev.ua.ikeepcalm.bedwars.net.protocol.source.MessageType;
 
 /**
  * The wrapper every control-bus message travels in.

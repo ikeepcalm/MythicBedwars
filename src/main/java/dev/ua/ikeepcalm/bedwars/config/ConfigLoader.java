@@ -71,6 +71,90 @@ public class ConfigLoader {
         return config.getInt("network.event.signup-seconds", 120);
     }
 
+    /**
+     * @return seconds-remaining thresholds at which to re-broadcast the offer, sorted high to low so
+     * the tick loop fires them in order regardless of how they were written in the config
+     */
+    public List<Integer> getEventSignupReminders() {
+        List<Integer> configured = config.getIntegerList("network.event.signup-reminders");
+        if (configured.isEmpty()) {
+            return List.of(90, 60, 30, 10);
+        }
+        return configured.stream().sorted(java.util.Comparator.reverseOrder()).toList();
+    }
+
+    /**
+     * @return how long the host holds its arena open waiting for recruits to arrive
+     */
+    /**
+     * @return how long to wait for a host to answer before treating the proposal as dead
+     */
+    public int getEventProposeTimeoutSeconds() {
+        return config.getInt("network.event.propose-timeout-seconds", 10);
+    }
+
+    public int getEventArrivalGraceSeconds() {
+        return config.getInt("network.event.arrival-grace-seconds", 60);
+    }
+
+    /**
+     * @return how long leftover slots stay open to players already on the Bedwars server, once the
+     * arrival window has closed
+     */
+    public int getEventFillWindowSeconds() {
+        return config.getInt("network.event.fill-window-seconds", 20);
+    }
+
+    /**
+     * @return the lobby countdown pushed out each tick so MBedwars never auto-starts an event arena
+     * out from under us
+     */
+    public int getEventLobbyHoldSeconds() {
+        return config.getInt("network.event.lobby-hold-seconds", 120);
+    }
+
+    /**
+     * @return the visible countdown handed to MBedwars once we decide to start
+     */
+    public int getEventStartCountdownSeconds() {
+        return config.getInt("network.event.start-countdown-seconds", 5);
+    }
+
+    /**
+     * @return the fewest arrivals worth starting a match with, regardless of how many signed up
+     */
+    public int getEventMinArrivals() {
+        return config.getInt("network.event.min-arrivals", 4);
+    }
+
+    /**
+     * @return how long an eliminated player may linger before being sent home automatically
+     */
+    public int getEventAutoReturnSeconds() {
+        return config.getInt("network.event.auto-return-seconds", 30);
+    }
+
+    /**
+     * @return the pause after a win before winners are moved, so the celebration is not cut short
+     */
+    public int getEventWinnerReturnDelaySeconds() {
+        return config.getInt("network.event.winner-return-delay-seconds", 15);
+    }
+
+    /**
+     * @return how often stale or orphaned events are swept up
+     */
+    public int getEventReapIntervalSeconds() {
+        return config.getInt("network.event.reap-interval-seconds", 30);
+    }
+
+    /**
+     * @return whether players already on the Bedwars server are told about a forming event
+     */
+    public boolean isEventAnnouncedLocally() {
+        return config.getBoolean("network.event.announce-locally", true);
+    }
+
     public int getEventCooldownMinutes() {
         return config.getInt("network.event.cooldown-minutes", 60);
     }

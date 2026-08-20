@@ -1,4 +1,4 @@
-package dev.ua.ikeepcalm.bedwars.net.protocol;
+package dev.ua.ikeepcalm.bedwars.net.protocol.source;
 
 /**
  * Lifecycle of one cross-server event.

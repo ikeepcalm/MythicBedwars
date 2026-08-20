@@ -3,24 +3,12 @@ package dev.ua.ikeepcalm.bedwars.net.transport;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.config.ConfigLoader;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
-import redis.clients.jedis.DefaultJedisClientConfig;
-import redis.clients.jedis.HostAndPort;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisClientConfig;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPubSub;
+import redis.clients.jedis.*;
 import redis.clients.jedis.params.ScanParams;
-import redis.clients.jedis.resps.ScanResult;
 import redis.clients.jedis.params.SetParams;
+import redis.clients.jedis.resps.ScanResult;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -213,6 +201,42 @@ public class JedisRedisClient implements RedisClient {
     @Override
     public Map<String, String> hgetAll(String key) {
         return withRedis(jedis -> jedis.hgetAll(key), Map.of());
+    }
+
+    @Override
+    public Optional<String> lpop(String key) {
+        return withRedis(jedis -> Optional.ofNullable(jedis.lpop(key)), Optional.empty());
+    }
+
+    @Override
+    public boolean lpush(String key, String value, int ttlSeconds) {
+        return withRedis(jedis -> {
+            jedis.lpush(key, value);
+            jedis.expire(key, ttlSeconds);
+            return true;
+        }, false);
+    }
+
+    @Override
+    public boolean rpushCapped(String key, String value, int maxLength) {
+        return withRedis(jedis -> {
+            jedis.rpush(key, value);
+            jedis.ltrim(key, -maxLength, -1);
+            return true;
+        }, false);
+    }
+
+    @Override
+    public Set<String> smembers(String key) {
+        return withRedis(jedis -> jedis.smembers(key), Set.of());
+    }
+
+    @Override
+    public long evalLong(String script, List<String> keys, List<String> args, long fallback) {
+        return withRedis(jedis -> {
+            Object reply = jedis.eval(script, keys, args);
+            return reply instanceof Long value ? value : fallback;
+        }, fallback);
     }
 
     @Override

@@ -10,7 +10,9 @@ import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class LocaleLoader {
@@ -83,12 +85,47 @@ public class LocaleLoader {
         return message;
     }
 
+    /**
+     * Reads a key holding a list of lines, for multi-line copy such as the event announcement.
+     *
+     * @return an empty list when the key is absent or not a list, so an operator can switch a whole
+     * section off simply by emptying it
+     */
+    public List<String> getMessageList(String key, Locale locale) {
+        FileConfiguration config = locales.getOrDefault(locale, locales.get(defaultLocale));
+        if (config == null) {
+            return List.of();
+        }
+
+        List<String> lines = config.getStringList(key);
+        if (lines.isEmpty() && !locale.equals(defaultLocale)) {
+            return getMessageList(key, defaultLocale);
+        }
+        return lines;
+    }
+
+    /**
+     * List counterpart of {@link #formatMessage}, with the same {@code {name}} placeholders applied
+     * to every line.
+     */
+    public List<Component> formatMessageList(String key, Object... args) {
+        List<String> lines = getMessageList(key, defaultLocale);
+        List<Component> formatted = new ArrayList<>(lines.size());
+        for (String line : lines) {
+            formatted.add(render(line, args));
+        }
+        return formatted;
+    }
+
     public Component formatMessage(String key, Object... args) {
         return formatMessage(key, defaultLocale, args);
     }
 
     public Component formatMessage(String key, Locale locale, Object... args) {
-        String message = getMessage(key, locale);
+        return render(getMessage(key, locale), args);
+    }
+
+    private Component render(String message, Object... args) {
         for (int i = 0; i < args.length; i += 2) {
             if (i + 1 < args.length) {
                 String placeholder = "{" + args[i] + "}";

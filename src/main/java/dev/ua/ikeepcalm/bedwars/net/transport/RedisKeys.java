@@ -67,6 +67,41 @@ public final class RedisKeys {
         return key("evt", eventId, "pending-return");
     }
 
+    /**
+     * Bundles waiting for a player to come back and collect them.
+     */
+    public String rewardsPending(java.util.UUID playerId) {
+        return key("rewards", "pending", playerId.toString());
+    }
+
+    /**
+     * Who has already been paid for an event; the emit-side guard against paying twice.
+     */
+    public String rewardsGranted(String eventId) {
+        return key("rewards", "granted", eventId);
+    }
+
+    /**
+     * Marks a bundle as applied; the redeem-side guard.
+     */
+    public String rewardsClaimed(java.util.UUID playerId, String eventId) {
+        return key("rewards", "claimed", playerId.toString(), eventId);
+    }
+
+    /**
+     * Per-day payout counter, for the anti-farming limit.
+     */
+    public String rewardsDailyCount(java.util.UUID playerId, String day) {
+        return key("rewards", "count", playerId.toString(), day);
+    }
+
+    /**
+     * Payloads that could not be read, kept for inspection rather than dropped.
+     */
+    public String rewardsDeadLetter() {
+        return key("rewards", "dlq");
+    }
+
     /** Short mutex around the decide-and-propose critical section. */
     public String proposeLock() {
         return key("lock", "propose");

@@ -6,7 +6,7 @@ import com.google.gson.JsonSyntaxException;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.config.NetworkRole;
 import dev.ua.ikeepcalm.bedwars.net.protocol.Envelope;
-import dev.ua.ikeepcalm.bedwars.net.protocol.MessageType;
+import dev.ua.ikeepcalm.bedwars.net.protocol.source.MessageType;
 import org.bukkit.Bukkit;
 
 import java.util.Collections;

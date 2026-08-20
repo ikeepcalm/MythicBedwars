@@ -1,0 +1,94 @@
+# Event Rewards
+# ============================================================
+# What players earn from a cross-server event match.
+#
+# Percentages are a share of the player's CURRENT SEQUENCE bar on the survival server, not of the
+# throwaway Sequence-9 loadout they play the match with. A win is meant to read as "one good
+# bounty" — supplementary to normal play, never a replacement for it.
+#
+# Each tier rolls its `guaranteed` entries always, then `rolls` more from `pool` by weight.
+
+rewards:
+  enabled: true
+
+  # How long an unclaimed bundle waits in Redis for the player to come back.
+  queue-ttl-days: 30
+  # Most bundles one player may have stockpiled; the oldest fall off beyond this.
+  max-queued-bundles: 10
+  # Above this many bundles in a day, only participation is paid; above double, nothing.
+  max-bundles-per-day: 8
+
+  # Where acting grants are booked. EVENT keeps them from eating the budget that duels and
+  # spell-on-uniques compete for. Falls back automatically on a CircleOfImagination that predates it.
+  acting-source: EVENT
+
+  # What to do when the player is not a Beyonder on the survival server. SUBSTITUTE converts
+  # non-item grants into items they can use once they awaken; HOLD keeps re-queuing. Never discards.
+  non-beyonder-policy: SUBSTITUTE
+  fallback-bottle-acting: 300
+  # Used when the loaded COI cannot credit acting cooldowns.
+  cooldown-substitute-percent: 2.0
+
+  # REQUEUE keeps overflow items safe for the next login; DROP puts them on the floor.
+  item-overflow: REQUEUE
+
+  eligibility:
+    # Time actually spent in the match before a reward is owed.
+    min-play-time-seconds: 120
+    # Kills, final kills, beds, or purchases — anything at all, to exclude the pure AFK body.
+    min-actions: 1
+    # Matches smaller than this pay nothing, or two accounts could farm the winner tier.
+    min-players: 4
+    # Below this share of the match spent active, participation is denied outright. Above it, the
+    # participation grant scales by the ratio; the winner tier is never scaled, because a carried
+    # teammate still genuinely won.
+    min-participation-ratio: 0.25
+    # Rage quits forfeit. Losing, being eliminated, or the arena stopping do not.
+    deny-rage-quit: true
+
+  redeem:
+    # Delay after login before applying, so COI has finished loading the player's Beyonder.
+    delay-ticks: 60
+    # Bundles applied per login; the rest wait, which also gives a reason to come back.
+    max-bundles-per-join: 5
+
+  tiers:
+    participation:
+      rolls: 1
+      guaranteed:
+        - { kind: ACTING_PERCENT, min-percent: 1.0, max-percent: 2.5 }
+      pool:
+        - { kind: COOLDOWN_CREDIT, weight: 40, min-percent: 5, max-percent: 12 }
+        - { kind: ITEM, weight: 30, item: ACTING_BOTTLE, min-percent: 1.0, max-percent: 2.0 }
+        - { kind: ITEM, weight: 20, item: SPIRITUALITY_POTION, tier: small, amount: 25 }
+        - { kind: ACTING_SPEED, weight: 10, min-value: 0.10, max-value: 0.20, duration-seconds: 1800 }
+
+    winner:
+      rolls: 2
+      guaranteed:
+        - { kind: ACTING_PERCENT, min-percent: 3.0, max-percent: 6.0 }
+      pool:
+        - { kind: COOLDOWN_CREDIT, weight: 30, min-percent: 15, max-percent: 30 }
+        - { kind: ACTING_SPEED, weight: 20, min-value: 0.25, max-value: 0.50, duration-seconds: 3600 }
+        - { kind: ACTING_ITEM_MULT, weight: 10, min-value: 1.25, max-value: 1.50, duration-seconds: 3600 }
+        - { kind: ITEM, weight: 15, item: ACTING_BOTTLE, min-percent: 3.0, max-percent: 5.0 }
+        - { kind: ITEM, weight: 10, item: ACTING_MULTIPLIER, tier: medium, min-value: 1.5, max-value: 1.5, duration-seconds: 1800 }
+        - { kind: ITEM, weight: 8, item: INGREDIENT_TOKEN }
+        - { kind: ITEM, weight: 5, item: RECIPE_TOKEN }
+        - { kind: ITEM, weight: 2, item: UNIVERSAL_POTION_TOKEN }
+
+    mvp:
+      enabled: true
+      rolls: 1
+      # Score needed to be named MVP at all, so a quiet match awards nobody.
+      min-score: 3.0
+      score:
+        kill: 1.0
+        final-kill: 3.0
+        bed-break: 5.0
+      guaranteed:
+        - { kind: ACTING_PERCENT, min-percent: 2.0, max-percent: 4.0 }
+      pool:
+        - { kind: ITEM, weight: 50, item: ACTING_BOTTLE, min-percent: 4.0, max-percent: 8.0 }
+        - { kind: ITEM, weight: 30, item: ANTI_CONTROL_CHARM }
+        - { kind: ITEM, weight: 20, item: RITUAL_BOOK, amount: 1 }

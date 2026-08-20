@@ -1,6 +1,5 @@
 package dev.ua.ikeepcalm.bedwars;
 
-import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import dev.ua.ikeepcalm.bedwars.cmd.CommandManager;
 import dev.ua.ikeepcalm.bedwars.cmd.impls.MinigameSubcommands;
 import dev.ua.ikeepcalm.bedwars.cmd.impls.SpectatorCommand;
@@ -12,13 +11,7 @@ import dev.ua.ikeepcalm.bedwars.domain.balancer.PathwayBalancer;
 import dev.ua.ikeepcalm.bedwars.domain.core.PathwayManager;
 import dev.ua.ikeepcalm.bedwars.domain.core.ShopManager;
 import dev.ua.ikeepcalm.bedwars.domain.core.StatisticsManager;
-import dev.ua.ikeepcalm.bedwars.domain.reward.CoiCapabilities;
-import dev.ua.ikeepcalm.bedwars.net.NetworkService;
-import dev.ua.ikeepcalm.bedwars.net.event.EventStore;
-import dev.ua.ikeepcalm.bedwars.net.minigame.EventArenaGuard;
-import dev.ua.ikeepcalm.bedwars.net.minigame.EventOrchestrator;
-import dev.ua.ikeepcalm.bedwars.net.smp.RecruitmentManager;
-import dev.ua.ikeepcalm.bedwars.net.velocity.ServerTransferService;
+import dev.ua.ikeepcalm.bedwars.domain.reward.*;
 import dev.ua.ikeepcalm.bedwars.domain.runnable.ActingProgressionTask;
 import dev.ua.ikeepcalm.bedwars.domain.runnable.PathwayVerificationTask;
 import dev.ua.ikeepcalm.bedwars.domain.spectator.SpectatorManager;
@@ -27,6 +20,18 @@ import dev.ua.ikeepcalm.bedwars.domain.stats.db.PathwayStats;
 import dev.ua.ikeepcalm.bedwars.domain.stats.db.SQLiteDatabase;
 import dev.ua.ikeepcalm.bedwars.domain.voting.service.VotingManager;
 import dev.ua.ikeepcalm.bedwars.listener.*;
+import dev.ua.ikeepcalm.bedwars.net.EventReaperTask;
+import dev.ua.ikeepcalm.bedwars.net.NetworkService;
+import dev.ua.ikeepcalm.bedwars.net.event.EventStore;
+import dev.ua.ikeepcalm.bedwars.net.minigame.EventArenaGuard;
+import dev.ua.ikeepcalm.bedwars.net.minigame.EventArenaListener;
+import dev.ua.ikeepcalm.bedwars.net.minigame.EventOrchestrator;
+import dev.ua.ikeepcalm.bedwars.net.minigame.EventReturnService;
+import dev.ua.ikeepcalm.bedwars.net.protocol.source.CancelReason;
+import dev.ua.ikeepcalm.bedwars.net.smp.RecruitmentManager;
+import dev.ua.ikeepcalm.bedwars.net.smp.SmpEventListener;
+import dev.ua.ikeepcalm.bedwars.net.velocity.ServerTransferService;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
@@ -68,6 +73,9 @@ public final class MythicBedwars extends JavaPlugin {
     private ServerTransferService transferService;
     private EventOrchestrator eventOrchestrator;
     private RecruitmentManager recruitmentManager;
+    private EventReturnService returnService;
+    private RewardService rewardService;
+    private RewardConfig rewardConfig;
 
     public static MythicBedwars getInstance() {
         return instance;
@@ -96,6 +104,18 @@ public final class MythicBedwars extends JavaPlugin {
         return this.eventOrchestrator;
     }
 
+    public EventReturnService getReturnService() {
+        return this.returnService;
+    }
+
+    public RewardService getRewardService() {
+        return this.rewardService;
+    }
+
+    public RewardConfig getRewardConfig() {
+        return this.rewardConfig;
+    }
+
     /**
      * @return the arenas currently held for events, or an empty set in any role that is not hosting.
      * Role-neutral on purpose, so shared code (commands, diagnostics) never has to name a
@@ -110,7 +130,7 @@ public final class MythicBedwars extends JavaPlugin {
      *
      * @return how many were released
      */
-    public int cancelHostedEvents(dev.ua.ikeepcalm.bedwars.net.protocol.CancelReason reason) {
+    public int cancelHostedEvents(CancelReason reason) {
         if (eventOrchestrator == null) {
             return 0;
         }
@@ -296,16 +316,36 @@ public final class MythicBedwars extends JavaPlugin {
         EventStore store = new EventStore(networkService.client(), networkService.keys(),
                 configLoader.getEventTtlSeconds());
 
+        rewardConfig = new RewardConfig(this);
+        rewardConfig.load();
+
+        RewardQueue rewardQueue = new RewardQueue(this, networkService.client(),
+                networkService.keys(), rewardConfig);
+
         if (isMinigameRole()) {
+            returnService = new EventReturnService(this, networkService);
+            rewardService = new RewardService(this, rewardConfig, rewardQueue);
+
             eventOrchestrator = new EventOrchestrator(this, networkService, store);
             eventOrchestrator.registerHandlers();
+
             Bukkit.getPluginManager().registerEvents(new EventArenaGuard(this, eventOrchestrator), this);
+            Bukkit.getPluginManager().registerEvents(
+                    new EventArenaListener(this, eventOrchestrator, returnService, rewardService), this);
+
             eventOrchestrator.recoverOnBoot();
         } else {
             recruitmentManager = new RecruitmentManager(this, networkService, store);
             recruitmentManager.registerHandlers();
+
+            RewardRedeemer redeemer = new RewardRedeemer(this, rewardConfig, rewardQueue);
+            Bukkit.getPluginManager().registerEvents(new SmpEventListener(this, redeemer), this);
+
             recruitmentManager.recoverOnBoot();
         }
+
+        long reapTicks = Math.max(1, configLoader.getEventReapIntervalSeconds()) * 20L;
+        new EventReaperTask(this, networkService, store).runTaskTimerAsynchronously(this, reapTicks, reapTicks);
     }
 
     private void bindCommand(String name, CommandExecutor executor, TabCompleter completer) {

@@ -29,6 +29,11 @@ public class EventReservation {
     /** True once leftover slots are opened to players already on this server. */
     private volatile boolean fillOpen;
 
+    /**
+     * Guards against the countdown being triggered twice, e.g. last arrival racing the deadline.
+     */
+    private volatile boolean starting;
+
     public EventReservation(String eventId, String arenaName, String smpServerId, String smpServerName,
                             int originalMinPlayers, long signupDeadline) {
         this.eventId = eventId;
@@ -89,5 +94,13 @@ public class EventReservation {
 
     public void openFill() {
         this.fillOpen = true;
+    }
+
+    public boolean isStarting() {
+        return starting;
+    }
+
+    public void markStarting() {
+        this.starting = true;
     }
 }

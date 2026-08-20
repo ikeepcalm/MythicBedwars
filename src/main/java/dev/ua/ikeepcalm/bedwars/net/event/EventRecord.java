@@ -1,7 +1,7 @@
 package dev.ua.ikeepcalm.bedwars.net.event;
 
-import dev.ua.ikeepcalm.bedwars.net.protocol.CancelReason;
-import dev.ua.ikeepcalm.bedwars.net.protocol.EventState;
+import dev.ua.ikeepcalm.bedwars.net.protocol.source.CancelReason;
+import dev.ua.ikeepcalm.bedwars.net.protocol.source.EventState;
 
 import java.util.HashMap;
 import java.util.Map;

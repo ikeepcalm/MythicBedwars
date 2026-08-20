@@ -1,10 +1,6 @@
 package dev.ua.ikeepcalm.bedwars.net.transport;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Consumer;
 
 /**
@@ -90,6 +86,37 @@ public interface RedisClient {
      * @return every field of the hash, or an empty map when it is absent or Redis is unavailable
      */
     Map<String, String> hgetAll(String key);
+
+    /**
+     * @return the members of a set, or empty when it is absent or Redis is unavailable
+     */
+    Set<String> smembers(String key);
+
+    /**
+     * Removes and returns the head of a list.
+     */
+    Optional<String> lpop(String key);
+
+    /**
+     * Pushes to the head of a list and refreshes its expiry, preserving order on a retry.
+     */
+    boolean lpush(String key, String value, int ttlSeconds);
+
+    /**
+     * Appends to a list, trimming it to {@code maxLength} so a runaway producer cannot grow it
+     * without bound.
+     */
+    boolean rpushCapped(String key, String value, int maxLength);
+
+    /**
+     * Runs a Lua script server-side.
+     *
+     * <p>The point of exposing this is atomicity: a check-then-write done from Java is two round
+     * trips with a race in between, which for signups would mean going over the cap.
+     *
+     * @return the script's integer reply, or {@code fallback} if it could not be run
+     */
+    long evalLong(String script, List<String> keys, List<String> args, long fallback);
 
     /**
      * Cursor-based key search. Never {@code KEYS} — that blocks the whole Redis server, and this

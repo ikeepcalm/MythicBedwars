@@ -34,3 +34,9 @@ permissions:
   mythicbedwars.spectator:
     description: "Access to MythicBedwars spectator features"
     default: true
+  mythicbedwars.event.join:
+    description: "Allows joining cross-server event matches"
+    default: true
+  mythicbedwars.event.exempt:
+    description: "Opts the holder out of event recruitment broadcasts"
+    default: false
