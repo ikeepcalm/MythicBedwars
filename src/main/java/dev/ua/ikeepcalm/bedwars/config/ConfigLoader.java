@@ -36,6 +36,82 @@ public class ConfigLoader {
         return NetworkRole.fromId(config.getString("network.role"), NetworkRole.MINIGAME);
     }
 
+    /**
+     * @return this instance's unique identity on the network. Two servers sharing an id will
+     * overwrite each other's heartbeat, so this must differ per backend.
+     */
+    public String getServerId() {
+        return config.getString("network.server-id", "unknown");
+    }
+
+    /**
+     * @return this backend's name in {@code velocity.toml} - i.e. where the proxy sends players to
+     * reach this server
+     */
+    public String getThisVelocityServer() {
+        return config.getString("network.velocity.this-server", "");
+    }
+
+    public String getRedisHost() {
+        return config.getString("network.redis.host", "127.0.0.1");
+    }
+
+    public int getRedisPort() {
+        return config.getInt("network.redis.port", 6379);
+    }
+
+    public String getRedisPassword() {
+        return config.getString("network.redis.password", "");
+    }
+
+    public int getRedisDatabase() {
+        return config.getInt("network.redis.database", 0);
+    }
+
+    public boolean isRedisSsl() {
+        return config.getBoolean("network.redis.ssl", false);
+    }
+
+    public int getRedisTimeoutMs() {
+        return config.getInt("network.redis.timeout-ms", 2000);
+    }
+
+    /**
+     * @return the key prefix for everything this plugin writes. Distinct from Circle of
+     * Imagination's own {@code coi} prefix so both can share one Redis instance.
+     */
+    public String getRedisNamespace() {
+        return config.getString("network.redis.namespace", "mythicbedwars");
+    }
+
+    public int getRedisPoolMaxTotal() {
+        return config.getInt("network.redis.pool.max-total", 8);
+    }
+
+    public int getRedisPoolMaxIdle() {
+        return config.getInt("network.redis.pool.max-idle", 4);
+    }
+
+    public int getRedisPoolMinIdle() {
+        return config.getInt("network.redis.pool.min-idle", 1);
+    }
+
+    public int getHeartbeatIntervalSeconds() {
+        return config.getInt("network.heartbeat.interval-seconds", 5);
+    }
+
+    public int getHeartbeatTtlSeconds() {
+        return config.getInt("network.heartbeat.ttl-seconds", 15);
+    }
+
+    /**
+     * @return how far behind a heartbeat's own timestamp may be before the server is treated as
+     * gone. Slightly above the TTL, so clock skew alone cannot hide a healthy peer.
+     */
+    public int getHeartbeatStaleAfterSeconds() {
+        return config.getInt("network.heartbeat.stale-after-seconds", 20);
+    }
+
     public double getPassiveActingMultiplier() {
         return config.getDouble("acting.passive-multiplier", 1.0);
     }

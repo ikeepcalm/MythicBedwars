@@ -7,7 +7,6 @@ group = 'dev.ua.ikeepcalm'
 version = '1.2.0'
 
 repositories {
-    mavenLocal()
     mavenCentral()
     maven {
         url = "https://nexus.mysterria.net/repository/plugin-public/"
@@ -31,6 +30,7 @@ dependencies {
     implementation("org.xerial:sqlite-jdbc:3.49.1.0")
     compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
     compileOnly 'de.marcely.bedwars:API:5.5.7'
+    compileOnly 'redis.clients:jedis:5.2.0'
     compileOnly 'dev.ua.ikeepcalm:circle-of-imagination-api:1.4.8-SNAPSHOT'
 }
 

@@ -13,6 +13,7 @@ import dev.ua.ikeepcalm.bedwars.domain.core.PathwayManager;
 import dev.ua.ikeepcalm.bedwars.domain.core.ShopManager;
 import dev.ua.ikeepcalm.bedwars.domain.core.StatisticsManager;
 import dev.ua.ikeepcalm.bedwars.domain.reward.CoiCapabilities;
+import dev.ua.ikeepcalm.bedwars.net.NetworkService;
 import dev.ua.ikeepcalm.bedwars.domain.runnable.ActingProgressionTask;
 import dev.ua.ikeepcalm.bedwars.domain.runnable.PathwayVerificationTask;
 import dev.ua.ikeepcalm.bedwars.domain.spectator.SpectatorManager;
@@ -58,6 +59,7 @@ public final class MythicBedwars extends JavaPlugin {
 
     private CircleOfImaginationAPI circleOfImaginationAPI;
     private CoiCapabilities coiCapabilities;
+    private NetworkService networkService;
 
     public static MythicBedwars getInstance() {
         return instance;
@@ -69,6 +71,13 @@ public final class MythicBedwars extends JavaPlugin {
 
     public CoiCapabilities getCoiCapabilities() {
         return this.coiCapabilities;
+    }
+
+    /**
+     * @return the cross-server plumbing, or {@code null} when {@code network.enabled} is off
+     */
+    public NetworkService getNetworkService() {
+        return this.networkService;
     }
 
     @Override
@@ -112,6 +121,12 @@ public final class MythicBedwars extends JavaPlugin {
 
         if (!started) {
             getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+
+        if (configLoader.isNetworkEnabled()) {
+            networkService = new NetworkService(this);
+            networkService.start();
         }
     }
 
@@ -234,6 +249,11 @@ public final class MythicBedwars extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (networkService != null) {
+            networkService.shutdown();
+            networkService = null;
+        }
+
         if (periodicSaveTask != null && !periodicSaveTask.isCancelled()) {
             periodicSaveTask.cancel();
             log("Cancelled periodic statistics save task.");

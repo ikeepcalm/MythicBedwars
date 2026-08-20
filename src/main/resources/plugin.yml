@@ -1,5 +1,5 @@
 name: MythicBedwars
-version: '1.0-SNAPSHOT'
+version: '${version}'
 main: dev.ua.ikeepcalm.bedwars.MythicBedwars
 api-version: '1.21'
 authors: [ ikeepcaIm ]
@@ -9,6 +9,10 @@ depend:
 softdepend:
   - MBedwars
   - Plan
+# Resolved at first startup into this plugin's own classloader, so a different Jedis version
+# shipped by another plugin cannot clash with ours.
+libraries:
+  - redis.clients:jedis:5.2.0
 commands:
   mythicbedwars:
     description: "Main MythicBedwars command"

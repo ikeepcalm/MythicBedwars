@@ -1,6 +1,7 @@
 package dev.ua.ikeepcalm.bedwars.cmd;
 
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
+import dev.ua.ikeepcalm.bedwars.cmd.impls.EventCommand;
 import dev.ua.ikeepcalm.bedwars.cmd.impls.MinigameSubcommands;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -23,14 +24,17 @@ import java.util.stream.Stream;
  */
 public class CommandManager implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SHARED_SUBCOMMANDS = List.of("toggle", "reload");
+    private static final List<String> SHARED_SUBCOMMANDS = List.of("toggle", "reload", "event");
 
     private final MythicBedwars plugin;
+
+    private final EventCommand event;
 
     private MinigameSubcommands minigame;
 
     public CommandManager(MythicBedwars plugin) {
         this.plugin = plugin;
+        this.event = new EventCommand(plugin);
     }
 
     /**
@@ -55,6 +59,7 @@ public class CommandManager implements CommandExecutor, TabCompleter {
         switch (args[0].toLowerCase()) {
             case "toggle" -> handleToggle(sender);
             case "reload" -> handleReload(sender);
+            case "event" -> event.dispatch(sender, args);
             default -> {
                 if (!MinigameSubcommands.handles(args[0])) {
                     sendHelpMessage(sender);
@@ -85,6 +90,7 @@ public class CommandManager implements CommandExecutor, TabCompleter {
         sender.sendMessage(Component.text("=== MythicBedwars Commands ===", NamedTextColor.GOLD));
         sender.sendMessage(Component.text("/mb toggle - Toggle global functionality", NamedTextColor.YELLOW));
         sender.sendMessage(Component.text("/mb reload - Reload configuration", NamedTextColor.YELLOW));
+        event.sendHelp(sender);
 
         if (minigame != null) {
             minigame.sendHelp(sender);
@@ -104,6 +110,10 @@ public class CommandManager implements CommandExecutor, TabCompleter {
             return available
                     .filter(s -> s.startsWith(args[0].toLowerCase()))
                     .collect(Collectors.toList());
+        }
+
+        if ("event".equalsIgnoreCase(args[0])) {
+            return event.tabComplete(args);
         }
 
         return minigame == null ? List.of() : minigame.tabComplete(args);

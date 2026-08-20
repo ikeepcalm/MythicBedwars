@@ -11,6 +11,35 @@ network:
   # MINIGAME - the Bedwars server that hosts the matches
   role: MINIGAME
 
+  # Unique per backend. Two servers sharing an id overwrite each other's heartbeat.
+  server-id: "bw-1"
+
+  velocity:
+    # This backend's name in velocity.toml - where the proxy sends players to reach this server.
+    this-server: "bedwars"
+
+  redis:
+    host: "127.0.0.1"
+    port: 6379
+    password: ""
+    database: 0
+    ssl: false
+    timeout-ms: 2000
+    # Prefix for every key this plugin writes. Deliberately different from Circle of Imagination's
+    # "coi" prefix, so both plugins can share one Redis instance.
+    namespace: "mythicbedwars"
+    pool:
+      max-total: 8
+      max-idle: 4
+      min-idle: 1
+
+  heartbeat:
+    # How often this server republishes its liveness key, and how long that key survives without a
+    # refresh. A server that dies simply stops appearing once its key expires.
+    interval-seconds: 5
+    ttl-seconds: 15
+    stale-after-seconds: 20
+
 # Global plugin settings
 global:
   enabled: true
