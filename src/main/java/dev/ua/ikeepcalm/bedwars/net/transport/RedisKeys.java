@@ -32,6 +32,33 @@ public final class RedisKeys {
         return key("hb", serverId);
     }
 
+    /**
+     * Set of every server id that has ever heartbeated.
+     *
+     * <p>Exists so liveness can be read with one SMEMBERS plus one MGET instead of a SCAN over a
+     * Redis this plugin shares with others. Members whose heartbeat key has expired are pruned on
+     * read, so the set converges on the live set without needing a clean shutdown.
+     */
+    public String heartbeatIndex() {
+        // Deliberately not key("hb", "index"): a server whose id happened to be "index" would then
+        // share this key, and the MGET over heartbeats would hit a SET and fail with WRONGTYPE -
+        // reporting no live peers at all.
+        return key("hbindex");
+    }
+
+    /**
+     * @return the server id embedded in a heartbeat key, or {@code null} if it is not one
+     */
+    public String serverIdFromHeartbeat(String heartbeatKey) {
+        String prefix = key("hb", "");
+        if (heartbeatKey == null || !heartbeatKey.startsWith(prefix)) {
+            return null;
+        }
+
+        String id = heartbeatKey.substring(prefix.length());
+        return id.isEmpty() || id.equals("index") ? null : id;
+    }
+
     /** SCAN pattern matching every instance's heartbeat. */
     public String heartbeatPattern() {
         return key("hb", "*");
@@ -63,6 +90,17 @@ public final class RedisKeys {
     }
 
     /** uuid → outcome, so a return survives a dropped message or a lost connection. */
+    /**
+     * Per-player pointer at an outcome waiting to be delivered, as {@code <eventId>:<outcome>}.
+     *
+     * <p>The per-event hash is the authoritative record, but it cannot be found from a player alone —
+     * and a survival server that restarted has no idea which event to look under. This key is what
+     * makes the outcome discoverable at login, which is the whole point of recording it durably.
+     */
+    public String playerReturn(java.util.UUID playerId) {
+        return key("ret", playerId.toString());
+    }
+
     public String eventPendingReturn(String eventId) {
         return key("evt", eventId, "pending-return");
     }

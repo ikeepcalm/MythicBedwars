@@ -40,6 +40,9 @@ public record Envelope(
      * @return whether this message is addressed to {@code serverId}
      */
     public boolean isAddressedTo(String serverId) {
-        return BROADCAST.equals(to) || to == null || to.equals(serverId);
+        // A null target is NOT a broadcast. Gson omits null fields, so treating it as one would
+        // have every instance on the channel act on a message meant for exactly one of them - two
+        // SMPs both handling the same EVENT_ACCEPT, for instance.
+        return BROADCAST.equals(to) || serverId.equals(to);
     }
 }

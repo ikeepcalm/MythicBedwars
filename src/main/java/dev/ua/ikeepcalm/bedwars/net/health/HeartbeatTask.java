@@ -48,7 +48,15 @@ public class HeartbeatTask extends BukkitRunnable {
         String payload = gson.toJson(heartbeat);
         String key = keys.heartbeat(serverId);
 
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> client.setWithTtl(key, payload, ttlSeconds));
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            // The command path cannot recover on its own - every call short-circuits while the
+            // client considers itself disconnected - so the heartbeat is what ends an outage.
+            client.probeIfDisconnected();
+
+            client.setWithTtl(key, payload, ttlSeconds);
+            // Long TTL: the index is a hint, and entries are pruned on read anyway.
+            client.sadd(keys.heartbeatIndex(), serverId, 86_400);
+        });
     }
 
     /**
@@ -57,5 +65,6 @@ public class HeartbeatTask extends BukkitRunnable {
      */
     public void clearNow() {
         client.delete(keys.heartbeat(serverId));
+        client.srem(keys.heartbeatIndex(), serverId);
     }
 }

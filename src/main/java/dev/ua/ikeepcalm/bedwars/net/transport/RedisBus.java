@@ -99,7 +99,20 @@ public class RedisBus {
         // publisher, and re-handling our own message would double-apply the transition.
         recentMessageIds.put(envelope.msgId(), Boolean.TRUE);
 
-        return client.publish(keys.channel(consumer), gson.toJson(envelope));
+        String channel = keys.channel(consumer);
+        String wire = gson.toJson(envelope);
+
+        // PUBLISH is a blocking round trip. Most callers are main-thread event handlers - and
+        // publishFinished runs inside RoundEndEvent, once per player - so a degraded Redis would
+        // stall the tick for the socket timeout on each one.
+        if (Bukkit.isPrimaryThread()) {
+            plugin.offMainThread(() -> client.publish(channel, wire));
+            // Optimistic: the send has been handed off, not confirmed. The only caller that needs a
+            // real answer (the propose path) is already off the main thread and takes the branch below.
+            return true;
+        }
+
+        return client.publish(channel, wire);
     }
 
     /**
@@ -121,6 +134,18 @@ public class RedisBus {
      * Runs on the Jedis subscriber thread.
      */
     private void receive(String raw) {
+        try {
+            dispatchIncoming(raw);
+        } catch (RuntimeException exception) {
+            // Anything escaping here would climb the subscriber thread. JsonSyntaxException is the
+            // obvious case, but a `data` field that is a JSON primitive rather than an object throws
+            // ClassCastException instead, and relying on the transport's outer catch to absorb that
+            // makes the bus's own robustness somebody else's problem.
+            plugin.log("Discarding unusable control message: {}", String.valueOf(exception.getMessage()));
+        }
+    }
+
+    private void dispatchIncoming(String raw) {
         Envelope envelope;
         try {
             envelope = gson.fromJson(raw, Envelope.class);
@@ -143,12 +168,15 @@ public class RedisBus {
             return;
         }
 
-        if (recentMessageIds.put(envelope.msgId(), Boolean.TRUE) != null) {
+        Consumer<Envelope> handler = handlers.get(envelope.type());
+        if (handler == null) {
+            // Checked BEFORE the dedup ring on purpose. Burning the id here would suppress the
+            // pub/sub redelivery of this exact message too, so a message that arrived a moment
+            // before its handler was registered would be lost rather than merely early.
             return;
         }
 
-        Consumer<Envelope> handler = handlers.get(envelope.type());
-        if (handler == null) {
+        if (recentMessageIds.put(envelope.msgId(), Boolean.TRUE) != null) {
             return;
         }
 

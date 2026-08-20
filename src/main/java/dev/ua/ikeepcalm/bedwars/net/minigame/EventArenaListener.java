@@ -68,6 +68,20 @@ public class EventArenaListener implements Listener {
         rewards.tracker().recordKill(arena.getName(), event.getKiller().getUniqueId(), event.isFatalDeath());
     }
 
+    /**
+     * @return everybody the arena still holds. Spectators live in a separate collection from players,
+     * and somebody who died and chose to watch is in the second one only.
+     */
+    private static List<Player> everyoneIn(Arena arena) {
+        List<Player> present = new ArrayList<>(arena.getPlayers());
+        for (Player spectator : arena.getSpectators()) {
+            if (!present.contains(spectator)) {
+                present.add(spectator);
+            }
+        }
+        return present;
+    }
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void onBedBreak(ArenaBedBreakEvent event) {
         Arena arena = event.getArena();
@@ -76,6 +90,26 @@ public class EventArenaListener implements Listener {
         }
 
         rewards.tracker().recordBedBreak(arena.getName(), event.getPlayer().getUniqueId());
+    }
+
+    /**
+     * Buying something counts as playing. Without this a defender who never lands a kill has zero
+     * recorded actions and is denied their whole bundle, which is the opposite of the intent.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onShopPurchase(de.marcely.bedwars.api.event.player.PlayerBuyInShopEvent event) {
+        Arena arena = event.getArena();
+        if (arena == null || !orchestrator.isEventArena(arena.getName())) {
+            return;
+        }
+
+        // The event is not Cancellable, so ignoreCancelled would do nothing. A purchase that failed
+        // - they could not afford it - must not clear the "did anything at all" gate.
+        if (!event.getProblems().isEmpty()) {
+            return;
+        }
+
+        rewards.tracker().recordPurchase(arena.getName(), event.getPlayer().getUniqueId());
     }
 
     /**
@@ -92,19 +126,37 @@ public class EventArenaListener implements Listener {
 
         Player player = event.getPlayer();
         KickReason reason = event.getReason();
-        rewards.tracker().markQuit(arena.getName(), player.getUniqueId(), reason);
+        boolean running = arena.getStatus() == ArenaStatus.RUNNING;
+
+        rewards.tracker().markQuit(arena.getName(), player.getUniqueId(), reason, running);
+
+        // Somebody who left before the match began stops counting towards the arrival gate, or the
+        // countdown fires for players who are no longer there.
+        if (!running) {
+            orchestrator.forgetArrival(reservation, player.getUniqueId());
+        }
 
         if (!player.isOnline()) {
             // Disconnected rather than eliminated; their outcome is settled at RoundEndEvent.
             return;
         }
 
-        if (reason.isRageQuit()) {
+        // Deliberately not KickReason#isRageQuit(), which also covers TELEPORT, SPECTATE and any
+        // third-party PLUGIN kick. Treating a player who died and chose to spectate as a quitter
+        // would deny their reward and, worse, skip their ride home entirely.
+        if (reason == KickReason.LEAVE && running) {
             returns.recordOnly(player.getUniqueId(), reservation, ReturnOutcome.QUIT);
             return;
         }
 
-        if (reason == KickReason.GAME_LOSE) {
+        // Somebody who chose to spectate is offered a ride home only when spectating is switched
+        // off for events; otherwise let them watch, and the round-end sweep will move them.
+        boolean spectating = reason == KickReason.SPECTATE;
+        if (spectating && plugin.getConfigManager().isEventSpectatorsAllowed()) {
+            return;
+        }
+
+        if (reason == KickReason.GAME_LOSE || spectating) {
             returns.offerReturn(player, reservation, ReturnOutcome.LOSE,
                     plugin.getConfigManager().getEventAutoReturnSeconds());
         }
@@ -125,32 +177,57 @@ public class EventArenaListener implements Listener {
         }
 
         Team winningTeam = event.getWinnerTeam();
+        boolean tie = event.isTie();
+
         List<Player> winners = new ArrayList<>(event.getWinners());
         List<Player> losers = new ArrayList<>(event.getLosers());
 
         List<UUID> quitWinners = event.getQuitWinners().stream().map(memory -> memory.getUniqueId()).toList();
         List<UUID> quitLosers = event.getQuitLosers().stream().map(memory -> memory.getUniqueId()).toList();
 
-        plugin.log("Event {} finished on {} - {} winner(s), {} loser(s).",
-                reservation.eventId(), arena.getName(), winners.size(), losers.size());
+        // On a tie MBedwars reports every one of those four collections as empty - that is the
+        // documented contract, not an oversight. Without this the whole roster would be left standing
+        // on the Bedwars server with no result, no reward and no way home.
+        if (tie) {
+            losers = new ArrayList<>(everyoneIn(arena));
+        }
 
-        rewards.payOut(reservation, arena, winners, losers, quitWinners, quitLosers, event.isTie());
-        orchestrator.publishFinished(reservation, arena, winningTeam, event.isTie(), winners, losers);
+        plugin.log("Event {} finished on {} - {} winner(s), {} loser(s){}.",
+                reservation.eventId(), arena.getName(), winners.size(), losers.size(),
+                tie ? " (tie)" : "");
+
+        rewards.payOut(reservation, arena, winners, losers, quitWinners, quitLosers, tie);
+        orchestrator.publishFinished(reservation, arena, winningTeam, tie, winners, losers);
+
+        // Winners and losers are returned separately. Handing the combined list a single outcome
+        // would file every surviving loser as a winner - harmless while the outcome only drives the
+        // greeting, and a real mispayment the moment anything downstream reads it.
+        List<UUID> winnerIds = winners.stream().map(Player::getUniqueId).toList();
+        List<UUID> loserIds = losers.stream().map(Player::getUniqueId).toList();
+
+        // Anyone still here who is in neither list - typically somebody eliminated who chose to
+        // spectate. getPlayers() alone would miss them, and they would be stranded.
+        List<UUID> others = everyoneIn(arena).stream()
+                .map(Player::getUniqueId)
+                .filter(id -> !winnerIds.contains(id) && !loserIds.contains(id))
+                .toList();
+
+        ReturnOutcome winnerOutcome = tie ? ReturnOutcome.TIE : ReturnOutcome.WIN;
+        ReturnOutcome loserOutcome = tie ? ReturnOutcome.TIE : ReturnOutcome.LOSE;
 
         // Let the celebration play before moving anybody.
         int delay = plugin.getConfigManager().getEventWinnerReturnDelaySeconds();
-        List<UUID> present = new ArrayList<>();
-        winners.forEach(player -> present.add(player.getUniqueId()));
-        losers.forEach(player -> present.add(player.getUniqueId()));
+        EventReservation held = reservation;
 
-        Bukkit.getScheduler().runTaskLater(plugin,
-                () -> returns.returnAll(present, reservation,
-                        event.isTie() ? ReturnOutcome.TIE : ReturnOutcome.WIN),
-                Math.max(1, delay) * 20L);
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            sendHome(winnerIds, held, winnerOutcome);
+            sendHome(loserIds, held, loserOutcome);
+            sendHome(others, held, loserOutcome);
+        }, Math.max(1, delay) * 20L);
 
         // Nobody is left to move, but their results still have to reach the SMP.
-        quitWinners.forEach(id -> returns.recordOnly(id, reservation, ReturnOutcome.WIN));
-        quitLosers.forEach(id -> returns.recordOnly(id, reservation, ReturnOutcome.LOSE));
+        quitWinners.forEach(id -> returns.recordOnly(id, reservation, winnerOutcome));
+        quitLosers.forEach(id -> returns.recordOnly(id, reservation, loserOutcome));
     }
 
     /**
@@ -168,7 +245,47 @@ public class EventArenaListener implements Listener {
         }
 
         rewards.tracker().clear(event.getArena().getName());
-        returns.clear(reservation.roster());
+        returns.clear(reservation.eventId());
+        orchestrator.finish(reservation);
+    }
+
+    /**
+     * Sends home only the players who were recruited from the survival server.
+     *
+     * <p>A local player who took a spare slot lives on this server. Transferring them to the survival
+     * server would be baffling — but their result still has to be recorded, because they played the
+     * match and their reward is queued against their real profile.
+     */
+    private void sendHome(List<UUID> playerIds, EventReservation reservation, ReturnOutcome outcome) {
+        List<UUID> travelling = playerIds.stream()
+                .filter(id -> reservation.roster().contains(id))
+                .toList();
+
+        playerIds.stream()
+                .filter(id -> !reservation.roster().contains(id))
+                .forEach(local -> returns.recordOnly(local, reservation, outcome));
+
+        if (!travelling.isEmpty()) {
+            returns.returnAll(travelling, reservation, outcome);
+        }
+    }
+
+    /**
+     * A clone being unloaded, which is the normal end of life for the arenas the selector prefers.
+     *
+     * <p>Teardown cannot hang off {@code STOPPED} alone: an arena removed without that transition
+     * would leak its reservation permanently, locking future events out and leaving the arena closed
+     * to local players for the life of the process.
+     */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onArenaUnload(de.marcely.bedwars.api.event.arena.ArenaUnloadEvent event) {
+        EventReservation reservation = orchestrator.getReservation(event.getArena().getName());
+        if (reservation == null) {
+            return;
+        }
+
+        rewards.tracker().clear(event.getArena().getName());
+        returns.clear(reservation.eventId());
         orchestrator.finish(reservation);
     }
 }

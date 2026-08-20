@@ -33,6 +33,14 @@ public interface RedisClient {
     boolean isAvailable();
 
     /**
+     * Re-tests a connection that previously failed, so an outage can end.
+     *
+     * <p>No-op while the connection is healthy. Does Redis I/O when it is not, so call it off the
+     * main thread.
+     */
+    void probeIfDisconnected();
+
+    /**
      * Registers interest in a channel. Must be called before {@link #start()}; the subscriber
      * thread subscribes to everything registered at once.
      *
@@ -88,9 +96,33 @@ public interface RedisClient {
     Map<String, String> hgetAll(String key);
 
     /**
+     * Removes one field from a hash.
+     */
+    boolean hdel(String key, String field);
+
+    /**
      * @return the members of a set, or empty when it is absent or Redis is unavailable
      */
     Set<String> smembers(String key);
+
+    /**
+     * Adds a member to a set, refreshing the set's TTL.
+     */
+    boolean sadd(String key, String member, int ttlSeconds);
+
+    /**
+     * Removes a member from a set.
+     */
+    boolean srem(String key, String member);
+
+    /**
+     * (Re)sets a key's time to live.
+     *
+     * <p>Preferred over {@link #delete(String)} for a record other servers may still need to
+     * reconcile against: it stops the record being authoritative without destroying it while a peer
+     * that missed the announcement is still catching up.
+     */
+    boolean expire(String key, int ttlSeconds);
 
     /**
      * Removes and returns the head of a list.

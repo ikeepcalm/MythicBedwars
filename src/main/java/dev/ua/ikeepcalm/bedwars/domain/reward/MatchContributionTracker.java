@@ -21,49 +21,20 @@ public class MatchContributionTracker {
     private final Map<UUID, Location> lastSeen = new ConcurrentHashMap<>();
 
     /**
-     * Mutable per-player counters. Touched from the main thread only, but held in concurrent maps
-     * because the reward path reads them from Redis callbacks.
+     * Records a departure, and decides whether it forfeits the reward.
+     *
+     * <p>Deliberately does <b>not</b> use {@code KickReason#isRageQuit()}, which is far broader than
+     * its name: it also covers {@code SERVER_DISCONNECT}, {@code TELEPORT}, {@code SPECTATE} and any
+     * third-party {@code PLUGIN} kick. Treating those as forfeits would punish a dropped connection,
+     * make the whole point of consuming the quit lists moot, and deny anyone who died and chose to
+     * spectate — which in Bedwars is simply how the game is played.
+     *
+     * @param whileRunning whether the match was actually in progress; walking out of a lobby or an
+     *                     end screen costs nothing
      */
-    public static class Contribution {
-        private final long joinedAt = System.currentTimeMillis();
-
-        private volatile int kills;
-        private volatile int finalKills;
-        private volatile int bedsBroken;
-        private volatile int purchases;
-        private volatile int activeSeconds;
-        private volatile KickReason quitReason;
-
-        public int kills() {
-            return kills;
-        }
-
-        public int finalKills() {
-            return finalKills;
-        }
-
-        public int bedsBroken() {
-            return bedsBroken;
-        }
-
-        public int actions() {
-            return kills + finalKills + bedsBroken + purchases;
-        }
-
-        public int activeSeconds() {
-            return activeSeconds;
-        }
-
-        public long millisSinceJoin() {
-            return System.currentTimeMillis() - joinedAt;
-        }
-
-        /**
-         * @return whether they walked out mid-match rather than being eliminated or the game ending
-         */
-        public boolean isRageQuit() {
-            return quitReason != null && quitReason.isRageQuit();
-        }
+    public void markQuit(String arenaName, UUID playerId, KickReason reason, boolean whileRunning) {
+        boolean voluntary = reason == KickReason.LEAVE || reason == KickReason.KICK;
+        of(arenaName, playerId).forfeit = whileRunning && voluntary;
     }
 
     public Contribution of(String arenaName, UUID playerId) {
@@ -116,14 +87,11 @@ public class MatchContributionTracker {
         }
     }
 
-    public void markQuit(String arenaName, UUID playerId, KickReason reason) {
-        of(arenaName, playerId).quitReason = reason;
-    }
-
     /**
      * @return the MVP's id and score, or {@code null} when nobody cleared the threshold
      */
-    public Map.Entry<UUID, Double> mvp(String arenaName, RewardConfig config) {
+    public Map.Entry<UUID, Double> mvp(String arenaName, RewardConfig config,
+                                       java.util.function.Predicate<Contribution> eligible) {
         Map<UUID, Contribution> arena = byArena.get(arenaName);
         if (arena == null || arena.isEmpty()) {
             return null;
@@ -136,6 +104,11 @@ public class MatchContributionTracker {
         Map.Entry<UUID, Double> best = null;
         for (Map.Entry<UUID, Contribution> entry : arena.entrySet()) {
             Contribution c = entry.getValue();
+            // Skipping the ineligible matters: the top scorer being denied would otherwise award the
+            // MVP tier to nobody, rather than to the best player who actually qualifies.
+            if (!eligible.test(c)) {
+                continue;
+            }
             double score = c.kills() * killScore + c.finalKills() * finalKillScore + c.bedsBroken() * bedScore;
             if (best == null || score > best.getValue()) {
                 best = Map.entry(entry.getKey(), score);
@@ -143,6 +116,52 @@ public class MatchContributionTracker {
         }
 
         return best != null && best.getValue() >= config.mvpMinScore() ? best : null;
+    }
+
+    /**
+     * Mutable per-player counters. Touched from the main thread only, but held in concurrent maps
+     * because the reward path reads them from Redis callbacks.
+     */
+    public static class Contribution {
+        private final long joinedAt = System.currentTimeMillis();
+
+        private volatile int kills;
+        private volatile int finalKills;
+        private volatile int bedsBroken;
+        private volatile int purchases;
+        private volatile int activeSeconds;
+        private volatile boolean forfeit;
+
+        public int kills() {
+            return kills;
+        }
+
+        public int finalKills() {
+            return finalKills;
+        }
+
+        public int bedsBroken() {
+            return bedsBroken;
+        }
+
+        public int actions() {
+            return kills + finalKills + bedsBroken + purchases;
+        }
+
+        public int activeSeconds() {
+            return activeSeconds;
+        }
+
+        public long millisSinceJoin() {
+            return System.currentTimeMillis() - joinedAt;
+        }
+
+        /**
+         * @return whether they walked out mid-match rather than being eliminated or the game ending
+         */
+        public boolean isForfeit() {
+            return forfeit;
+        }
     }
 
     public void clear(String arenaName) {

@@ -9,6 +9,7 @@ import redis.clients.jedis.params.SetParams;
 import redis.clients.jedis.resps.ScanResult;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -27,8 +28,13 @@ public class JedisRedisClient implements RedisClient {
     private static final long RECONNECT_MIN_MILLIS = 1_000L;
     private static final long RECONNECT_MAX_MILLIS = 30_000L;
 
+    /**
+     * Hard ceiling on SCAN cursor iterations; this Redis is shared with other plugins.
+     */
+    private static final int MAX_SCAN_ITERATIONS = 16;
+
     private final MythicBedwars plugin;
-    private final Map<String, Consumer<String>> subscriptions = new LinkedHashMap<>();
+    private final Map<String, Consumer<String>> subscriptions = new ConcurrentHashMap<>();
     private final AtomicBoolean running = new AtomicBoolean();
 
     private volatile JedisPool pool;
@@ -37,16 +43,58 @@ public class JedisRedisClient implements RedisClient {
     private volatile JedisPubSub activePubSub;
 
     /**
+     * The subscriber's own connection, kept outside the pool. {@code SUBSCRIBE} blocks for the life
+     * of the subscription, so borrowing a pooled connection for it would permanently consume one of
+     * {@code max-total} - and with a small pool that starves every ordinary command.
+     */
+    private volatile Jedis subscriberConnection;
+
+    private volatile HostAndPort address;
+    private volatile JedisClientConfig clientConfig;
+
+    /**
      * Throttles the "Redis is down" log to once per outage rather than once per operation.
      */
     private volatile boolean outageLogged;
+
+    /**
+     * Throttles the "Redis rejected a command" log, which would otherwise fire per call.
+     */
+    private volatile boolean commandErrorLogged;
 
     public JedisRedisClient(MythicBedwars plugin) {
         this.plugin = plugin;
     }
 
+    /**
+     * @return whether an error reply means the server cannot serve us at all, as opposed to having
+     * refused one malformed request
+     */
+    private static boolean isFatalReply(String message) {
+        if (message == null) {
+            return false;
+        }
+
+        String upper = message.toUpperCase(java.util.Locale.ROOT);
+        return upper.startsWith("LOADING")
+                || upper.startsWith("MISCONF")
+                || upper.startsWith("OOM")
+                || upper.startsWith("READONLY")
+                || upper.startsWith("CLUSTERDOWN")
+                || upper.startsWith("NOAUTH")
+                || upper.startsWith("NOPERM")
+                || upper.startsWith("MASTERDOWN");
+    }
+
     @Override
     public void subscribe(String channel, Consumer<String> handler) {
+        if (running.get()) {
+            // The subscriber thread snapshots the channel list when it starts and then blocks, so a
+            // late registration would silently never receive anything.
+            plugin.log("Ignoring subscription to '{}' registered after the client started.", channel);
+            return;
+        }
+
         subscriptions.put(channel, handler);
     }
 
@@ -62,9 +110,10 @@ public class JedisRedisClient implements RedisClient {
         poolConfig.setMaxTotal(config.getRedisPoolMaxTotal());
         poolConfig.setMaxIdle(config.getRedisPoolMaxIdle());
         poolConfig.setMinIdle(config.getRedisPoolMinIdle());
-        // A blocked event tick is worse than a failed one: never let a borrow hang the caller.
+        // A brief wait rides out a burst without turning it into a failure, but it is capped well
+        // below the socket timeout: a blocked main-thread tick is worse than a dropped message.
         poolConfig.setBlockWhenExhausted(true);
-        poolConfig.setMaxWait(java.time.Duration.ofMillis(config.getRedisTimeoutMs()));
+        poolConfig.setMaxWait(java.time.Duration.ofMillis(Math.min(250, config.getRedisTimeoutMs())));
 
         DefaultJedisClientConfig.Builder clientConfig = DefaultJedisClientConfig.builder()
                 .connectionTimeoutMillis(config.getRedisTimeoutMs())
@@ -77,55 +126,45 @@ public class JedisRedisClient implements RedisClient {
             clientConfig.password(password);
         }
 
-        JedisClientConfig built = clientConfig.build();
-        HostAndPort address = new HostAndPort(config.getRedisHost(), config.getRedisPort());
+        this.clientConfig = clientConfig.build();
+        this.address = new HostAndPort(config.getRedisHost(), config.getRedisPort());
+        this.pool = new JedisPool(poolConfig, this.address, this.clientConfig);
 
-        this.pool = new JedisPool(poolConfig, address, built);
+        String host = config.getRedisHost();
+        int port = config.getRedisPort();
+        String namespace = config.getRedisNamespace();
 
-        if (ping()) {
-            plugin.log("Redis connected ({}:{}, namespace '{}')",
-                    config.getRedisHost(), config.getRedisPort(), config.getRedisNamespace());
-        } else {
-            plugin.log("Redis unreachable at {}:{} - cross-server events are offline until it returns.",
-                    config.getRedisHost(), config.getRedisPort());
-        }
+        // Off the main thread: an unreachable-but-not-refusing host (dropped packets rather than a
+        // closed port) would otherwise stall onEnable for the connect plus socket timeout.
+        org.bukkit.Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            if (ping()) {
+                plugin.log("Redis connected ({}:{}, namespace '{}')", host, port, namespace);
+            } else {
+                plugin.log("Redis unreachable at {}:{} - cross-server events are offline until it returns.",
+                        host, port);
+            }
+        });
 
         if (!subscriptions.isEmpty()) {
             startSubscriber();
         }
     }
 
+    /**
+     * Re-tests a connection that previously failed.
+     *
+     * <p>This is the only way out of the disconnected state for the command path: {@link #withRedis}
+     * short-circuits while {@code connected} is false, so without an explicit probe a single slow
+     * command would pause cross-server events until the next restart. Driven by the heartbeat, off
+     * the main thread.
+     */
     @Override
-    public void shutdown() {
-        if (!running.compareAndSet(true, false)) {
+    public void probeIfDisconnected() {
+        if (!running.get() || connected || pool == null) {
             return;
         }
 
-        connected = false;
-
-        JedisPubSub pubSub = this.activePubSub;
-        if (pubSub != null) {
-            try {
-                pubSub.unsubscribe();
-            } catch (RuntimeException ignored) {
-                // Already torn down, or the connection died first - nothing useful to do.
-            }
-        }
-
-        Thread thread = this.subscriberThread;
-        if (thread != null) {
-            thread.interrupt();
-        }
-
-        JedisPool current = this.pool;
-        if (current != null) {
-            try {
-                current.close();
-            } catch (RuntimeException ignored) {
-                // Best-effort on shutdown.
-            }
-            this.pool = null;
-        }
+        ping();
     }
 
     @Override
@@ -186,16 +225,53 @@ public class JedisRedisClient implements RedisClient {
     }
 
     @Override
-    public boolean hset(String key, Map<String, String> values, int ttlSeconds) {
-        if (values.isEmpty()) {
-            return false;
+    public void shutdown() {
+        if (!running.compareAndSet(true, false)) {
+            return;
         }
 
-        return withRedis(jedis -> {
-            jedis.hset(key, values);
-            jedis.expire(key, ttlSeconds);
-            return true;
-        }, false);
+        connected = false;
+
+        JedisPubSub pubSub = this.activePubSub;
+        if (pubSub != null) {
+            try {
+                pubSub.unsubscribe();
+            } catch (RuntimeException ignored) {
+                // Already torn down, or the connection died first - nothing useful to do.
+            }
+        }
+
+        // interrupt() does not break a thread parked in a blocking socket read, so close the
+        // subscriber's own connection underneath it and let the read fail.
+        Jedis subscriber = this.subscriberConnection;
+        if (subscriber != null) {
+            try {
+                subscriber.close();
+            } catch (RuntimeException ignored) {
+                // Best-effort on shutdown.
+            }
+        }
+
+        Thread thread = this.subscriberThread;
+        if (thread != null) {
+            thread.interrupt();
+            try {
+                // Bounded: a lingering daemon thread is survivable, a hung shutdown is not.
+                thread.join(2_000L);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        JedisPool current = this.pool;
+        if (current != null) {
+            try {
+                current.close();
+            } catch (RuntimeException ignored) {
+                // Best-effort on shutdown.
+            }
+            this.pool = null;
+        }
     }
 
     @Override
@@ -204,17 +280,34 @@ public class JedisRedisClient implements RedisClient {
     }
 
     @Override
+    public boolean hset(String key, Map<String, String> values, int ttlSeconds) {
+        if (values.isEmpty()) {
+            return false;
+        }
+
+        return withRedis(jedis -> {
+            // One script rather than HSET-then-EXPIRE: a connection lost between the two commands
+            // would leave the hash with no TTL at all, and nothing else ever cleans it up.
+            List<String> args = new java.util.ArrayList<>(values.size() * 2 + 1);
+            args.add(Integer.toString(ttlSeconds));
+            values.forEach((field, value) -> {
+                args.add(field);
+                args.add(value);
+            });
+
+            jedis.eval(LuaScripts.HSET_WITH_TTL, List.of(key), args);
+            return true;
+        }, false);
+    }
+
+    @Override
     public Optional<String> lpop(String key) {
         return withRedis(jedis -> Optional.ofNullable(jedis.lpop(key)), Optional.empty());
     }
 
     @Override
-    public boolean lpush(String key, String value, int ttlSeconds) {
-        return withRedis(jedis -> {
-            jedis.lpush(key, value);
-            jedis.expire(key, ttlSeconds);
-            return true;
-        }, false);
+    public boolean hdel(String key, String field) {
+        return withRedis(jedis -> jedis.hdel(key, field) > 0, false);
     }
 
     @Override
@@ -232,6 +325,31 @@ public class JedisRedisClient implements RedisClient {
     }
 
     @Override
+    public boolean lpush(String key, String value, int ttlSeconds) {
+        return withRedis(jedis -> {
+            // One script, for the same reason as hset: a connection lost between the push and the
+            // expire would leave a reward queue that never ages out.
+            jedis.eval(LuaScripts.LPUSH_WITH_TTL, List.of(key),
+                    List.of(value, Integer.toString(ttlSeconds)));
+            return true;
+        }, false);
+    }
+
+    @Override
+    public boolean sadd(String key, String member, int ttlSeconds) {
+        return withRedis(jedis -> {
+            jedis.eval(LuaScripts.SADD_WITH_TTL, List.of(key),
+                    List.of(member, Integer.toString(ttlSeconds)));
+            return true;
+        }, false);
+    }
+
+    @Override
+    public boolean srem(String key, String member) {
+        return withRedis(jedis -> jedis.srem(key, member) > 0, false);
+    }
+
+    @Override
     public long evalLong(String script, List<String> keys, List<String> args, long fallback) {
         return withRedis(jedis -> {
             Object reply = jedis.eval(script, keys, args);
@@ -240,20 +358,8 @@ public class JedisRedisClient implements RedisClient {
     }
 
     @Override
-    public Set<String> scan(String matchPattern, int limit) {
-        return withRedis(jedis -> {
-            Set<String> found = new HashSet<>();
-            ScanParams params = new ScanParams().match(matchPattern).count(Math.min(limit, 100));
-            String cursor = ScanParams.SCAN_POINTER_START;
-
-            do {
-                ScanResult<String> result = jedis.scan(cursor, params);
-                found.addAll(result.getResult());
-                cursor = result.getCursor();
-            } while (!ScanParams.SCAN_POINTER_START.equals(cursor) && found.size() < limit);
-
-            return found;
-        }, Set.of());
+    public boolean expire(String key, int ttlSeconds) {
+        return withRedis(jedis -> jedis.expire(key, ttlSeconds) > 0, false);
     }
 
     private boolean ping() {
@@ -266,6 +372,34 @@ public class JedisRedisClient implements RedisClient {
 
     private <T> T withRedis(Function<Jedis, T> operation, T fallback) {
         return withRedis(operation, fallback, false);
+    }
+
+    /**
+     * Bounded prefix scan.
+     *
+     * <p>Hard-capped in cursor iterations as well as results. This Redis is shared with other
+     * plugins, so a match pattern that happens to be selective would otherwise walk the entire
+     * keyspace — thousands of round trips, holding a pooled connection, under a socket timeout whose
+     * expiry gets read as an outage.
+     */
+    @Override
+    public Set<String> scan(String matchPattern, int limit) {
+        return withRedis(jedis -> {
+            Set<String> found = new HashSet<>();
+            ScanParams params = new ScanParams().match(matchPattern).count(512);
+            String cursor = ScanParams.SCAN_POINTER_START;
+            int iterations = 0;
+
+            do {
+                ScanResult<String> result = jedis.scan(cursor, params);
+                found.addAll(result.getResult());
+                cursor = result.getCursor();
+            } while (!ScanParams.SCAN_POINTER_START.equals(cursor)
+                    && found.size() < limit
+                    && ++iterations < MAX_SCAN_ITERATIONS);
+
+            return found;
+        }, Set.of());
     }
 
     /**
@@ -285,6 +419,18 @@ public class JedisRedisClient implements RedisClient {
             T result = operation.apply(jedis);
             markConnected();
             return result;
+        } catch (redis.clients.jedis.exceptions.JedisDataException exception) {
+            // A Lua error or a WRONGTYPE is a fault in the request we just sent; pausing the whole
+            // feature over one would be disproportionate. But Redis also reports genuinely unusable
+            // states through the same exception, and treating those as "fine" would leave
+            // isAvailable() claiming the feature works while every write silently fails.
+            if (isFatalReply(exception.getMessage())) {
+                markDisconnected(exception);
+            } else if (!commandErrorLogged) {
+                commandErrorLogged = true;
+                plugin.log("Redis rejected a command: {}", String.valueOf(exception.getMessage()));
+            }
+            return fallback;
         } catch (RuntimeException exception) {
             markDisconnected(exception);
             return fallback;
@@ -294,6 +440,7 @@ public class JedisRedisClient implements RedisClient {
     private void markConnected() {
         if (!connected) {
             connected = true;
+            commandErrorLogged = false;
             if (outageLogged) {
                 plugin.log("Redis connection restored.");
                 outageLogged = false;
@@ -321,12 +468,19 @@ public class JedisRedisClient implements RedisClient {
             long backoff = RECONNECT_MIN_MILLIS;
 
             while (running.get() && !Thread.currentThread().isInterrupted()) {
-                JedisPool current = this.pool;
-                if (current == null) {
+                HostAndPort target = this.address;
+                JedisClientConfig settings = this.clientConfig;
+                if (target == null || settings == null) {
                     break;
                 }
 
-                try (Jedis jedis = current.getResource()) {
+                boolean subscribed = false;
+
+                // Deliberately not pooled: this connection blocks for the life of the subscription.
+                try (Jedis jedis = new Jedis(target, settings)) {
+                    this.subscriberConnection = jedis;
+
+                    boolean[] established = {false};
                     JedisPubSub pubSub = new JedisPubSub() {
                         @Override
                         public void onMessage(String channel, String message) {
@@ -335,15 +489,16 @@ public class JedisRedisClient implements RedisClient {
 
                         @Override
                         public void onSubscribe(String channel, int subscribedChannels) {
+                            established[0] = true;
                             markConnected();
                         }
                     };
 
                     this.activePubSub = pubSub;
-                    backoff = RECONNECT_MIN_MILLIS;
 
                     // Blocks until unsubscribed or the connection drops.
                     jedis.subscribe(pubSub, channels.toArray(new String[0]));
+                    subscribed = established[0];
                 } catch (RuntimeException exception) {
                     if (!running.get()) {
                         break;
@@ -351,6 +506,13 @@ public class JedisRedisClient implements RedisClient {
                     markDisconnected(exception);
                 } finally {
                     this.activePubSub = null;
+                    this.subscriberConnection = null;
+                }
+
+                // Reset only once a subscription genuinely came up. Resetting before subscribe()
+                // would make an instant failure (maxclients, NOAUTH) spin at 1 Hz forever.
+                if (subscribed) {
+                    backoff = RECONNECT_MIN_MILLIS;
                 }
 
                 if (!running.get()) {

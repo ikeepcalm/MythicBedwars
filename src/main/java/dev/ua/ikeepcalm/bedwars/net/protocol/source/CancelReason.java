@@ -41,9 +41,23 @@ public enum CancelReason {
     REDIS_DEGRADED;
 
     /**
-     * @return a lower-case, human-facing form for messages and logs
+     * @return a lower-case form for logs. Deliberately <b>not</b> for players: "redis degraded" and
+     * "proposer gone" are implementation vocabulary, and interpolating an enum name into a chat
+     * message also leaves it untranslated. Use {@link #localeKey()} for anything a player reads.
      */
     public String display() {
         return name().toLowerCase(Locale.ROOT).replace('_', ' ');
+    }
+
+    /**
+     * @return the locale key explaining this cancellation to a player
+     */
+    public String localeKey() {
+        return "magic.event.cancelled." + name().toLowerCase(Locale.ROOT);
+    }
+
+    @Override
+    public String toString() {
+        return display();
     }
 }

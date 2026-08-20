@@ -11,20 +11,24 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.Locale;
 
 /**
  * Router for {@code /mythicbedwars}.
  *
  * <p>Registered in both network roles, but only the role-neutral subcommands live here. Everything
  * that needs MBedwars is held behind {@link #minigame}, which stays {@code null} on an SMP instance
- * so {@link MinigameSubcommands} is never loaded there.
+ * so {@link MinigameSubcommands} is never loaded there — see {@link Subcommands} for why the name
+ * lookup cannot live on that class.
+ *
+ * <p><b>Permissions are per subcommand, not on the command.</b> Declaring
+ * {@code mythicbedwars.admin} in {@code plugin.yml} would have Bukkit reject an ordinary player
+ * before this executor ever ran, which would make {@code /mb event join} — the relog-proof way to
+ * sign up when a chat button has expired — unusable by exactly the people it exists for.
  */
 public class CommandManager implements CommandExecutor, TabCompleter {
-
-    private static final List<String> SHARED_SUBCOMMANDS = List.of("toggle", "reload", "event");
 
     private final MythicBedwars plugin;
 
@@ -46,22 +50,32 @@ public class CommandManager implements CommandExecutor, TabCompleter {
 
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, String[] args) {
-        if (!sender.hasPermission("mythicbedwars.admin")) {
-            sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.no_permission"));
-            return true;
-        }
-
         if (args.length == 0) {
+            if (!requireAdmin(sender)) {
+                return true;
+            }
             sendHelpMessage(sender);
             return true;
         }
 
-        switch (args[0].toLowerCase()) {
+        String subcommand = args[0].toLowerCase(Locale.ROOT);
+
+        // The one subcommand ordinary players are meant to reach. EventCommand checks the finer
+        // grained permission for each of its own branches.
+        if ("event".equals(subcommand)) {
+            event.dispatch(sender, args);
+            return true;
+        }
+
+        if (!requireAdmin(sender)) {
+            return true;
+        }
+
+        switch (subcommand) {
             case "toggle" -> handleToggle(sender);
             case "reload" -> handleReload(sender);
-            case "event" -> event.dispatch(sender, args);
             default -> {
-                if (!MinigameSubcommands.handles(args[0])) {
+                if (!Subcommands.isMinigameOnly(subcommand)) {
                     sendHelpMessage(sender);
                 } else if (minigame == null) {
                     sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.minigame_only"));
@@ -74,22 +88,39 @@ public class CommandManager implements CommandExecutor, TabCompleter {
         return true;
     }
 
+    private boolean requireAdmin(CommandSender sender) {
+        if (sender.hasPermission(Subcommands.ADMIN_PERMISSION)) {
+            return true;
+        }
+
+        sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.no_permission"));
+        return false;
+    }
+
     private void handleToggle(CommandSender sender) {
         boolean newState = plugin.getConfigManager().toggleGlobalEnabled();
-        String message = newState ? "MythicBedwars enabled globally!" : "MythicBedwars disabled globally!";
-        sender.sendMessage(Component.text(message, newState ? NamedTextColor.GREEN : NamedTextColor.RED));
+        sender.sendMessage(plugin.getLocaleManager().formatMessage(
+                newState ? "magic.commands.global_enabled" : "magic.commands.global_disabled"));
     }
 
     private void handleReload(CommandSender sender) {
         plugin.getConfigManager().loadConfig();
         plugin.getLocaleManager().loadLocales();
-        sender.sendMessage(Component.text("Configuration reloaded!", NamedTextColor.GREEN));
+
+        // Reward tuning is the thing an operator is most likely to be iterating on, and load() is
+        // idempotent — reporting "reloaded" while still paying out the old loot table is worse than
+        // not offering a reload at all.
+        if (plugin.getRewardConfig() != null) {
+            plugin.getRewardConfig().load();
+        }
+
+        sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.config_reloaded"));
     }
 
     private void sendHelpMessage(CommandSender sender) {
         sender.sendMessage(Component.text("=== MythicBedwars Commands ===", NamedTextColor.GOLD));
         sender.sendMessage(Component.text("/mb toggle - Toggle global functionality", NamedTextColor.YELLOW));
-        sender.sendMessage(Component.text("/mb reload - Reload configuration", NamedTextColor.YELLOW));
+        sender.sendMessage(Component.text("/mb reload - Reload config, language and reward files", NamedTextColor.YELLOW));
         event.sendHelp(sender);
 
         if (minigame != null) {
@@ -102,20 +133,28 @@ public class CommandManager implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command, @NotNull String alias, String[] args) {
-        if (args.length == 1) {
-            Stream<String> available = minigame == null
-                    ? SHARED_SUBCOMMANDS.stream()
-                    : Stream.concat(SHARED_SUBCOMMANDS.stream(), MinigameSubcommands.SUBCOMMANDS.stream());
+        boolean admin = sender.hasPermission(Subcommands.ADMIN_PERMISSION);
 
-            return available
-                    .filter(s -> s.startsWith(args[0].toLowerCase()))
-                    .collect(Collectors.toList());
+        if (args.length == 1) {
+            List<String> available = new ArrayList<>();
+
+            if (admin) {
+                available.addAll(Subcommands.SHARED);
+                if (minigame != null) {
+                    available.addAll(Subcommands.MINIGAME);
+                }
+            } else if (sender.hasPermission(Subcommands.JOIN_PERMISSION)) {
+                available.add("event");
+            }
+
+            String prefix = args[0].toLowerCase(Locale.ROOT);
+            return available.stream().filter(s -> s.startsWith(prefix)).toList();
         }
 
         if ("event".equalsIgnoreCase(args[0])) {
-            return event.tabComplete(args);
+            return event.tabComplete(sender, args);
         }
 
-        return minigame == null ? List.of() : minigame.tabComplete(args);
+        return admin && minigame != null ? minigame.tabComplete(args) : List.of();
     }
 }

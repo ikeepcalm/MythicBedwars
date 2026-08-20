@@ -3,10 +3,11 @@ package dev.ua.ikeepcalm.bedwars.net;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.net.event.EventRecord;
 import dev.ua.ikeepcalm.bedwars.net.event.EventStore;
+import dev.ua.ikeepcalm.bedwars.net.protocol.payload.Payloads;
 import dev.ua.ikeepcalm.bedwars.net.protocol.source.CancelReason;
 import dev.ua.ikeepcalm.bedwars.net.protocol.source.EventState;
 import dev.ua.ikeepcalm.bedwars.net.protocol.source.MessageType;
-import dev.ua.ikeepcalm.bedwars.net.protocol.payload.Payloads;
+import org.bukkit.Bukkit;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.Optional;
@@ -30,14 +31,39 @@ public class EventReaperTask extends BukkitRunnable {
     private final NetworkService network;
     private final EventStore store;
 
+    /**
+     * Snapshotted rather than read per pass: this runs on an async thread, and the backing
+     * configuration object is swapped wholesale by {@code /mb reload} on the main one.
+     */
+    private final long proposeTimeoutMillis;
+    private final long stallMillis;
+
     public EventReaperTask(MythicBedwars plugin, NetworkService network, EventStore store) {
         this.plugin = plugin;
         this.network = network;
         this.store = store;
+        this.proposeTimeoutMillis = plugin.getConfigManager().getEventProposeTimeoutSeconds() * 1000L;
+        // Derived from the lifecycle it has to outlast, not from the TTL: an operator who lowers
+        // event-ttl-seconds would otherwise start reaping perfectly healthy events.
+        long happyPath = (plugin.getConfigManager().getEventSignupSeconds()
+                + plugin.getConfigManager().getEventArrivalGraceSeconds()
+                + plugin.getConfigManager().getEventFillWindowSeconds()
+                + plugin.getConfigManager().getEventLobbyHoldSeconds()) * 1000L;
+        this.stallMillis = Math.max(180_000L, happyPath * 2);
     }
 
     @Override
     public void run() {
+        try {
+            sweep();
+        } catch (RuntimeException exception) {
+            // Letting this escape would cancel the repeating task for good, quietly disabling the
+            // only thing that cleans up after a dead peer.
+            plugin.log("Reaper pass failed: {}", String.valueOf(exception.getMessage()));
+        }
+    }
+
+    private void sweep() {
         if (!network.isAvailable()) {
             return;
         }
@@ -59,7 +85,7 @@ public class EventReaperTask extends BukkitRunnable {
 
         EventRecord record = stored.get();
         if (record.state().isTerminal()) {
-            store.purge(eventId);
+            store.retire(eventId);
             return;
         }
 
@@ -72,13 +98,22 @@ public class EventReaperTask extends BukkitRunnable {
             return;
         }
 
-        plugin.log("Reaping event {} in state {}: {}", eventId, record.state(), reason.display());
+        plugin.log("Reaping event {} in state {}: {}", eventId, record.state(), reason);
         store.write(record.cancelled(reason));
+
+        // Only the other role's channel. A message published to our own role never comes back to
+        // us: the bus registers each outgoing id in its dedup ring before publishing, so the local
+        // half has to be told directly.
         network.bus().broadcast(network.counterpartRole(), MessageType.EVENT_CANCELLED, eventId,
                 new Payloads.Cancelled(reason, network.serverId()));
-        network.bus().broadcast(plugin.getNetworkRole(), MessageType.EVENT_CANCELLED, eventId,
-                new Payloads.Cancelled(reason, network.serverId()));
-        store.purge(eventId);
+
+        EventParticipant participant = plugin.getEventParticipant();
+        if (participant != null) {
+            CancelReason resolved = reason;
+            Bukkit.getScheduler().runTask(plugin, () -> participant.abandonLocally(eventId, resolved));
+        }
+
+        store.retire(eventId);
     }
 
     /**
@@ -103,9 +138,15 @@ public class EventReaperTask extends BukkitRunnable {
 
         // A proposal nobody answered. The host claim TTL has long since lapsed by this point.
         if (record.state() == EventState.PROPOSED
-            && now > record.createdAt() + plugin.getConfigManager().getEventProposeTimeoutSeconds() * 1000L
-                     + DEADLINE_GRACE_MILLIS) {
+                && now > record.createdAt() + proposeTimeoutMillis + DEADLINE_GRACE_MILLIS) {
             return CancelReason.NO_HOST;
+        }
+
+        // Catch-all. ACCEPTED, SIGNUP_CLOSED, ARENA_READY and TRANSFERRING have no deadline of their
+        // own, so without this an event whose state write landed but whose announcement did not
+        // would hold the network's one event slot until its full TTL elapsed.
+        if (now > record.createdAt() + stallMillis) {
+            return CancelReason.TIMEOUT_SIGNUP;
         }
 
         return null;

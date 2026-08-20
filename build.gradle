@@ -25,12 +25,22 @@ repositories {
     maven { url 'https://jitpack.io' }
 }
 
+// Single source of truth for anything Paper resolves at runtime through plugin.yml's `libraries:`.
+// Bumping only one of the two would compile cleanly and then fail with NoSuchMethodError in
+// production, so processResources expands these into plugin.yml below.
+ext.jedisVersion = '5.2.0'
+ext.commonsPoolVersion = '2.12.0'
+ext.sqliteVersion = '3.49.1.0'
+
 dependencies {
-    implementation 'com.github.plan-player-analytics:Plan:5.6.2965'
-    implementation("org.xerial:sqlite-jdbc:3.49.1.0")
+    // Loaded reflectively from Plan's own classloader; never needs to be on our runtime classpath.
+    compileOnly 'com.github.plan-player-analytics:Plan:5.6.2965'
     compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
     compileOnly 'de.marcely.bedwars:API:5.5.7'
-    compileOnly 'redis.clients:jedis:5.2.0'
+    // Present at runtime via plugin.yml `libraries:`, not bundled - there is no shadow plugin here.
+    compileOnly "redis.clients:jedis:${jedisVersion}"
+    compileOnly "org.apache.commons:commons-pool2:${commonsPoolVersion}"
+    compileOnly "org.xerial:sqlite-jdbc:${sqliteVersion}"
     compileOnly 'dev.ua.ikeepcalm:circle-of-imagination-api:1.4.8-SNAPSHOT'
 }
 
@@ -62,7 +72,12 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 processResources {
-    def props = [version: version]
+    def props = [
+            version           : version,
+            jedisVersion      : jedisVersion,
+            commonsPoolVersion: commonsPoolVersion,
+            sqliteVersion     : sqliteVersion
+    ]
     inputs.properties props
     filteringCharset 'UTF-8'
     filesMatching('plugin.yml') {

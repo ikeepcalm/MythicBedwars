@@ -13,12 +13,17 @@ import java.util.concurrent.ConcurrentHashMap;
 public class EventReservation {
 
     private final String eventId;
-    private final String arenaName;
     private final String smpServerId;
     private final String smpServerName;
 
+    /**
+     * Not final: once signups close the real turnout is known, and that is the first moment a
+     * right-sized arena can be chosen. See {@link #reassign}.
+     */
+    private volatile String arenaName;
+
     /** Restored when the reservation is released, so an event cannot permanently retune an arena. */
-    private final int originalMinPlayers;
+    private volatile int originalMinPlayers;
 
     private final Set<UUID> roster = ConcurrentHashMap.newKeySet();
     private final Set<UUID> arrived = ConcurrentHashMap.newKeySet();
@@ -50,6 +55,16 @@ public class EventReservation {
 
     public String arenaName() {
         return arenaName;
+    }
+
+    /**
+     * Moves this reservation to a different arena, before anybody has arrived.
+     *
+     * @param originalMinPlayers the new arena's own setting, to be restored on release
+     */
+    public void reassign(String arenaName, int originalMinPlayers) {
+        this.arenaName = arenaName;
+        this.originalMinPlayers = originalMinPlayers;
     }
 
     public String smpServerId() {

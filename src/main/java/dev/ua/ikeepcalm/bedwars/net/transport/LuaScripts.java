@@ -27,6 +27,44 @@ public final class LuaScripts {
             return redis.call('SCARD', KEYS[1])
             """;
 
+    /**
+     * Writes a whole hash and (re)sets its expiry together.
+     *
+     * <p>HSET followed by a separate EXPIRE can lose the second half to a dropped connection,
+     * leaving a hash that never expires and that nothing else cleans up.
+     *
+     * <p>{@code KEYS[1]} hash. {@code ARGV[1]} ttl seconds, then field/value pairs.
+     */
+    public static final String HSET_WITH_TTL = """
+            for i = 2, #ARGV, 2 do
+              redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1])
+            end
+            redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+            return 1
+            """;
+
+    /**
+     * Adds a set member and refreshes the set's expiry together, for the same reason.
+     *
+     * <p>{@code KEYS[1]} set. {@code ARGV[1]} member, {@code ARGV[2]} ttl seconds.
+     */
+    public static final String SADD_WITH_TTL = """
+            redis.call('SADD', KEYS[1], ARGV[1])
+            redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
+            return redis.call('SCARD', KEYS[1])
+            """;
+
+    /**
+     * Pushes onto the head of a list and refreshes its expiry together.
+     *
+     * <p>{@code KEYS[1]} list. {@code ARGV[1]} value, {@code ARGV[2]} ttl seconds.
+     */
+    public static final String LPUSH_WITH_TTL = """
+            redis.call('LPUSH', KEYS[1], ARGV[1])
+            redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
+            return redis.call('LLEN', KEYS[1])
+            """;
+
     /** Signups are not open (yet, or any more). */
     public static final long SIGNUP_CLOSED = -1L;
 

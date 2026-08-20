@@ -43,6 +43,19 @@ public class SignupRegistry {
     }
 
     /**
+     * Takes a player off the roster.
+     *
+     * <p>Needed for the signed-up-then-vanished case. Leaving a no-show on the roster keeps the
+     * "everybody has arrived" check from ever passing, so the match waits out its whole grace period
+     * and can be cancelled for too few arrivals while the players who did turn up stand around.
+     *
+     * <p>Does Redis I/O — call off the main thread.
+     */
+    public void remove(String eventId, UUID playerId) {
+        client.srem(keys.eventRoster(eventId), playerId.toString());
+    }
+
+    /**
      * Attempts to add {@code playerId} to the roster. Does Redis I/O — call off the main thread.
      */
     public Result signUp(String eventId, UUID playerId, int cap) {

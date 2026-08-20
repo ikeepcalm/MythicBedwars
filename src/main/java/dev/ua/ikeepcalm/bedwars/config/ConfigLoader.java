@@ -8,7 +8,7 @@ import java.util.List;
 public class ConfigLoader {
 
     private final JavaPlugin plugin;
-    private FileConfiguration config;
+    private volatile FileConfiguration config;
 
     public ConfigLoader(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -37,11 +37,28 @@ public class ConfigLoader {
     }
 
     /**
-     * @return this instance's unique identity on the network. Two servers sharing an id will
-     * overwrite each other's heartbeat, so this must differ per backend.
+     * @return the literal {@code network.role} value, for reporting one that could not be read
+     */
+    public String getRawNetworkRole() {
+        return config.getString("network.role", "");
+    }
+
+    /**
+     * @return whether {@code network.role} is set to something that is neither role. Worth a warning:
+     * silently defaulting a survival server to MINIGAME disables the whole plugin there.
+     */
+    public boolean hasUnparseableNetworkRole() {
+        String raw = config.getString("network.role");
+        return raw != null && !raw.isBlank() && NetworkRole.fromId(raw, null) == null;
+    }
+
+    /**
+     * @return this instance's unique identity on the network, or an empty string when unset. Two
+     * servers sharing an id overwrite each other's heartbeat and each accepts messages addressed to
+     * the other, so there is deliberately no usable default.
      */
     public String getServerId() {
-        return config.getString("network.server-id", "unknown");
+        return config.getString("network.server-id", "");
     }
 
     /**
@@ -53,7 +70,8 @@ public class ConfigLoader {
     }
 
     /**
-     * @return the Velocity name of the survival server, i.e. where finished players are sent back to
+     * @return whether this instance takes part in event matches at all, separately from whether the
+     * network transport is up
      */
     public boolean isEventEnabled() {
         return config.getBoolean("network.event.enabled", true);
@@ -84,15 +102,15 @@ public class ConfigLoader {
     }
 
     /**
-     * @return how long the host holds its arena open waiting for recruits to arrive
-     */
-    /**
      * @return how long to wait for a host to answer before treating the proposal as dead
      */
     public int getEventProposeTimeoutSeconds() {
         return config.getInt("network.event.propose-timeout-seconds", 10);
     }
 
+    /**
+     * @return how long the host holds its arena open waiting for recruits to arrive
+     */
     public int getEventArrivalGraceSeconds() {
         return config.getInt("network.event.arrival-grace-seconds", 60);
     }
@@ -160,6 +178,52 @@ public class ConfigLoader {
     }
 
     /**
+     * @return how often an in-flight event reconciles its local state against the durable Redis hash.
+     * Pub/sub is not replayable, so this is what turns a dropped message into a short delay rather
+     * than a wedged event.
+     */
+    public int getEventSyncIntervalSeconds() {
+        return config.getInt("network.event.sync-interval-seconds", 2);
+    }
+
+    /**
+     * @return whether spectators may watch an event match
+     */
+    public boolean isEventSpectatorsAllowed() {
+        return config.getBoolean("network.event.allow-spectators", true);
+    }
+
+    /**
+     * @return whether the SMP offers events on its own when enough players are idle, rather than
+     * waiting for an admin to run {@code /mb event start}
+     */
+    public boolean isEventAutoProposeEnabled() {
+        return config.getBoolean("network.event.auto-propose", false);
+    }
+
+    /**
+     * @return how often to consider offering an event
+     */
+    public int getEventAutoProposeIntervalSeconds() {
+        return config.getInt("network.event.auto-propose-interval-seconds", 300);
+    }
+
+    /**
+     * @return the fewest idle players worth offering an event to
+     */
+    public int getEventAutoProposeMinIdlePlayers() {
+        return config.getInt("network.event.auto-propose-min-idle-players", 8);
+    }
+
+    /**
+     * @return how long a player must have gone without moving to count as idle, i.e. as somebody who
+     * might welcome something to do
+     */
+    public int getEventIdleThresholdSeconds() {
+        return config.getInt("network.event.idle-threshold-seconds", 300);
+    }
+
+    /**
      * @return how long an event's Redis keys survive without an update, so a half-finished event
      * cannot block the network forever
      */
@@ -183,6 +247,15 @@ public class ConfigLoader {
 
     public List<String> getEventArenaBlacklist() {
         return config.getStringList("network.event.arena-blacklist");
+    }
+
+    /**
+     * @return the team count to favour when several arenas hold the turnout equally well. Four is the
+     * classic Bedwars shape, and it is what makes sixteen players land on a 4x4 rather than an 8x2
+     * and four players on a 1v1v1v1 rather than a 2v2.
+     */
+    public int getEventPreferredTeamCount() {
+        return Math.max(2, config.getInt("network.event.preferred-team-count", 4));
     }
 
     /**
@@ -309,7 +382,7 @@ public class ConfigLoader {
     }
 
     public boolean isPathwayBalancingEnabled() {
-        return config.getBoolean("pathways.auto-balance", false);
+        return config.getBoolean("pathways.auto-balance", true);
     }
 
     public double getDeathActingPenalty() {

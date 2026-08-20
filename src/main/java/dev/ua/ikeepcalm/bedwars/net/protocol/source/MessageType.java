@@ -17,7 +17,11 @@ public enum MessageType {
     /** Minigame → SMP: "no", with a reason. */
     EVENT_REJECT,
 
-    /** Either → both: a player signed up. Notification only; the Redis roster set is authoritative. */
+    /**
+     * Reserved. A per-signup notification is not currently published: the Redis roster set is
+     * authoritative and read directly, so nothing needed it, and publishing one per click bought
+     * only traffic. Kept so the wire numbering stays stable.
+     */
     ROSTER_ADD,
 
     /** SMP → minigame: signups are closed, here is the final roster. */

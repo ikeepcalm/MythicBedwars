@@ -27,8 +27,13 @@ public record CoiCapabilities(boolean cooldownCredit, ActingSourceCategory rewar
      */
     private static final ActingSourceCategory FALLBACK_SOURCE = ActingSourceCategory.PLAYER_INTERACTION;
 
-    public static CoiCapabilities probe(CircleOfImaginationAPI api) {
-        return new CoiCapabilities(probeCooldownCredit(api), probeRewardSource());
+    /**
+     * @param sourceName the acting-source category rewards should be booked under, from
+     *                   {@code rewards.yml}. Resolved reflectively so a name the loaded Circle of
+     *                   Imagination does not know degrades to the fallback instead of throwing.
+     */
+    public static CoiCapabilities probe(CircleOfImaginationAPI api, String sourceName) {
+        return new CoiCapabilities(probeCooldownCredit(api), probeRewardSource(sourceName));
     }
 
     /**
@@ -44,9 +49,13 @@ public record CoiCapabilities(boolean cooldownCredit, ActingSourceCategory rewar
         }
     }
 
-    private static ActingSourceCategory probeRewardSource() {
+    private static ActingSourceCategory probeRewardSource(String sourceName) {
+        if (sourceName == null || sourceName.isBlank()) {
+            return FALLBACK_SOURCE;
+        }
         try {
-            return ActingSourceCategory.valueOf("EVENT");
+            return ActingSourceCategory.valueOf(
+                    sourceName.trim().toUpperCase(java.util.Locale.ROOT).replace('-', '_'));
         } catch (IllegalArgumentException e) {
             return FALLBACK_SOURCE;
         }

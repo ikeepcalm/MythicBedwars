@@ -31,7 +31,7 @@ public class RewardQueue {
      */
     private static final String EMIT = """
             if redis.call('SADD', KEYS[1], ARGV[1]) == 0 then return 0 end
-            redis.call('EXPIRE', KEYS[1], 604800)
+            redis.call('EXPIRE', KEYS[1], tonumber(ARGV[3]))
             redis.call('RPUSH', KEYS[2], ARGV[2])
             redis.call('LTRIM', KEYS[2], -tonumber(ARGV[4]), -1)
             redis.call('EXPIRE', KEYS[2], tonumber(ARGV[3]))
@@ -122,10 +122,30 @@ public class RewardQueue {
     }
 
     /**
+     * Reads today's tally without touching it. Does Redis I/O.
+     *
      * @return how many bundles this player has already been paid today
      */
-    public long countToday(UUID playerId, String day) {
-        return client.evalLong("""
+    public long bundlesToday(UUID playerId, String day) {
+        return client.get(keys.rewardsDailyCount(playerId, day))
+                .map(raw -> {
+                    try {
+                        return Long.parseLong(raw.trim());
+                    } catch (NumberFormatException e) {
+                        return 0L;
+                    }
+                })
+                .orElse(0L);
+    }
+
+    /**
+     * Counts one bundle against today's tally. Called only once a bundle is genuinely owed, so a
+     * duplicate round-end cannot push somebody towards the cap on rewards they were never paid.
+     *
+     * <p>Does Redis I/O.
+     */
+    public void recordBundleToday(UUID playerId, String day) {
+        client.evalLong("""
                 local n = redis.call('INCR', KEYS[1])
                 redis.call('EXPIRE', KEYS[1], 172800)
                 return n

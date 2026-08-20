@@ -53,12 +53,35 @@ public class ServerRegistry {
             return cached;
         }
 
-        Set<String> heartbeatKeys = client.scan(keys.heartbeatPattern(), SCAN_LIMIT);
-        List<Heartbeat> found = new ArrayList<>();
+        List<String> stale = new ArrayList<>();
 
-        if (!heartbeatKeys.isEmpty()) {
-            for (String raw : client.getAll(heartbeatKeys)) {
+        // Read the index rather than scanning: this Redis is shared, and a SCAN whose pattern
+        // matches only a couple of keys still walks the whole keyspace to prove it.
+        Set<String> members = client.smembers(keys.heartbeatIndex());
+        if (members.isEmpty()) {
+            // Either a fresh deployment or an index lost to a flush; fall back once so a peer that
+            // is genuinely there is still found, and the next heartbeat rebuilds the index.
+            members = new java.util.LinkedHashSet<>();
+            for (String key : client.scan(keys.heartbeatPattern(), SCAN_LIMIT)) {
+                String id = keys.serverIdFromHeartbeat(key);
+                if (id != null) {
+                    members.add(id);
+                }
+            }
+        }
+
+        List<Heartbeat> found = new ArrayList<>();
+        List<String> ordered = new ArrayList<>(members);
+        List<String> lookups = ordered.stream().map(keys::heartbeat).toList();
+
+        if (!lookups.isEmpty()) {
+            List<String> payloads = client.getAll(lookups);
+
+            for (int i = 0; i < payloads.size() && i < ordered.size(); i++) {
+                String raw = payloads.get(i);
                 if (raw == null) {
+                    // Its key expired, so it is gone; keep the index from growing without bound.
+                    stale.add(ordered.get(i));
                     continue;
                 }
 
@@ -73,6 +96,8 @@ public class ServerRegistry {
             }
         }
 
+        stale.forEach(id -> client.srem(keys.heartbeatIndex(), id));
+
         found.sort(Comparator.comparing(Heartbeat::serverId));
 
         cached = List.copyOf(found);
@@ -85,10 +110,22 @@ public class ServerRegistry {
     }
 
     /**
-     * @return whether at least one Bedwars server is up and could be asked to host
+     * Picks the Bedwars server most likely to be able to host.
+     *
+     * <p>Only a pre-flight: the chosen host still has to find a usable arena and accept, and if
+     * several are up they race for the host claim regardless. The point is to avoid proposing to a
+     * server that is visibly the wrong choice, and to have somewhere to hang the decision when more
+     * hosts are added later.
+     *
+     * @param expected how many players the event hopes to seat
+     * @return the best candidate, or empty when no Bedwars server is up
      */
-    public boolean hasLiveMinigameServer() {
-        return !aliveWithRole(NetworkRole.MINIGAME).isEmpty();
+    public java.util.Optional<Heartbeat> bestMinigameHost(int expected) {
+        return aliveWithRole(NetworkRole.MINIGAME).stream()
+                // Emptiest first: a server already busy with locals has fewer free arenas, and its
+                // players are the ones an event would inconvenience.
+                .min(Comparator.comparingInt(Heartbeat::onlinePlayers)
+                        .thenComparing(Heartbeat::serverId));
     }
 
     /**

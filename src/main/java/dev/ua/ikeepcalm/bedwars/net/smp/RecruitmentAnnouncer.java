@@ -8,6 +8,7 @@ import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.Sound;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import java.time.Duration;
@@ -26,10 +27,11 @@ import java.util.function.Consumer;
  * <p>Every section is driven by the locale file, and an empty list switches its section off
  * entirely, so the copy can be tuned or trimmed without touching code.
  *
- * <p>The join prompt is an Adventure click callback rather than a command: the token is minted per
- * message and scoped to this event, so it cannot be replayed, guessed, or run by somebody who never
- * saw the offer. {@code /mb event join} still exists as the fallback, because callbacks do not
- * survive a reconnect.
+ * <p>The join prompt is an Adventure click callback rather than a command, so nobody who never saw
+ * the offer can trigger it. It is minted <b>once per announcement</b>, not once per recipient: a
+ * per-player callback would register one server-side token for every player on every reminder, all
+ * of them unlimited-use and outliving the drive by a quarter of an hour.
+ * {@code /mb event join} exists as the fallback, because callbacks do not survive a reconnect.
  */
 public class RecruitmentAnnouncer {
 
@@ -46,10 +48,16 @@ public class RecruitmentAnnouncer {
      * The full pitch: what it is, what you win, what happens to you, and how long you have.
      */
     public void announceOpen(String arena, int count, int max, long secondsLeft, Consumer<Player> onJoin) {
-        List<Component> lines = buildOpening(arena, count, max, secondsLeft, onJoin);
+        // `arena` is accepted for the log and for operators who want it back in the copy; the shipped
+        // wording leaves it out, because a raw MBedwars id like "bw_4x1_castle" tells a player nothing.
+
+        Component button = joinButtonFor(null, onJoin);
 
         for (Player player : recipients()) {
-            lines.forEach(player::sendMessage);
+            // Rendered per recipient so each reads it in their own language.
+            for (Component line : buildOpening(player, arena, count, max, secondsLeft, onJoin, button)) {
+                player.sendMessage(line);
+            }
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8f, 1.4f);
         }
     }
@@ -59,24 +67,29 @@ public class RecruitmentAnnouncer {
      * in place rather than by waiting for a real drive.
      */
     public void preview(Audience audience, String arena, int max, long secondsLeft) {
-        buildOpening(arena, 0, max, secondsLeft, player -> {
-        }).forEach(audience::sendMessage);
+        CommandSender viewer = audience instanceof CommandSender sender ? sender : null;
+        Consumer<Player> noop = player -> {
+        };
+
+        buildOpening(viewer, arena, 0, max, secondsLeft, noop, joinButtonFor(viewer, noop))
+                .forEach(audience::sendMessage);
     }
 
-    private List<Component> buildOpening(String arena, int count, int max, long secondsLeft, Consumer<Player> onJoin) {
-        Component header = message("magic.event.announce.header");
-        Component title = message("magic.event.announce.title");
-        Component body = message("magic.event.announce.body", "arena", arena);
+    private List<Component> buildOpening(CommandSender viewer, String arena, int count, int max,
+                                         long secondsLeft, Consumer<Player> onJoin, Component button) {
+        Component header = message(viewer, "magic.event.announce.header");
+        Component title = message(viewer, "magic.event.announce.title");
+        Component body = message(viewer, "magic.event.announce.body");
 
-        Component rewardsHeader = message("magic.event.announce.rewards_header");
-        List<Component> rewards = messageList("magic.event.announce.rewards");
+        Component rewardsHeader = message(viewer, "magic.event.announce.rewards_header");
+        List<Component> rewards = messageList(viewer, "magic.event.announce.rewards");
 
-        Component flowHeader = message("magic.event.announce.flow_header");
-        List<Component> flow = messageList("magic.event.announce.flow");
+        Component flowHeader = message(viewer, "magic.event.announce.flow_header");
+        List<Component> flow = messageList(viewer, "magic.event.announce.flow");
 
-        Component slots = message("magic.event.announce.slots",
+        Component slots = message(viewer, "magic.event.announce.slots",
                 "count", count, "max", max, "seconds", secondsLeft);
-        Component footer = message("magic.event.announce.footer");
+        Component footer = message(viewer, "magic.event.announce.footer");
 
         List<Component> lines = new ArrayList<>();
         lines.add(header);
@@ -97,27 +110,31 @@ public class RecruitmentAnnouncer {
         }
 
         lines.add(Component.empty());
-        lines.add(slots.append(Component.text("   ")).append(joinButton(onJoin)));
+        lines.add(slots.append(Component.text("   ")).append(button));
         lines.add(footer);
         return lines;
     }
 
     /**
-     * A single line for the players who have not signed up yet. Repeats the reward hook, because a
-     * bare countdown gives nobody a reason to act.
+     * A single line for the players who have not signed up yet.
      */
     public void announceReminder(int count, int max, long secondsLeft, Consumer<Player> onJoin) {
-        Component line = message("magic.event.announce.reminder",
-                "count", count, "max", max, "seconds", secondsLeft);
+        Component button = joinButtonFor(null, onJoin);
 
         for (Player player : recipients()) {
-            player.sendMessage(line.append(Component.text("  ")).append(joinButton(onJoin)));
+            player.sendMessage(message(player, "magic.event.announce.reminder",
+                    "count", count, "max", max, "seconds", secondsLeft)
+                    .append(Component.text("  "))
+                    .append(button));
         }
     }
 
-    public void announceCancelled(Component reason) {
+    /**
+     * Sends one line to everybody who has not opted out, in their own language.
+     */
+    public void broadcast(String localeKey, Object... args) {
         for (Player player : recipients()) {
-            player.sendMessage(reason);
+            player.sendMessage(message(player, localeKey, args));
         }
     }
 
@@ -125,20 +142,24 @@ public class RecruitmentAnnouncer {
      * Broadcasts that somebody joined, so the drive visibly builds momentum.
      */
     public void announceSignup(String playerName, int count, int max) {
-        Component line = message("magic.event.announce.joined", "player", playerName, "count", count, "max", max);
         for (Player player : recipients()) {
-            player.sendMessage(line);
+            player.sendMessage(message(player, "magic.event.announce.joined",
+                    "player", playerName, "count", count, "max", max));
         }
     }
 
-    private Component joinButton(Consumer<Player> onJoin) {
+    /**
+     * Builds the clickable prompt once. The label and hover text are resolved against
+     * {@code viewer}, or the default locale when it is being shared across recipients.
+     */
+    private Component joinButtonFor(CommandSender viewer, Consumer<Player> onJoin) {
         ClickCallback.Options options = ClickCallback.Options.builder()
                 .uses(ClickCallback.UNLIMITED_USES)
                 .lifetime(CALLBACK_LIFETIME)
                 .build();
 
-        return message("magic.event.announce.join_button")
-                .hoverEvent(HoverEvent.showText(message("magic.event.announce.join_hover")))
+        return message(viewer, "magic.event.announce.join_button")
+                .hoverEvent(HoverEvent.showText(message(viewer, "magic.event.announce.join_hover")))
                 .clickEvent(ClickEvent.callback(audience -> {
                     if (audience instanceof Player player) {
                         onJoin.accept(player);
@@ -155,11 +176,15 @@ public class RecruitmentAnnouncer {
                 .toList();
     }
 
-    private Component message(String key, Object... args) {
-        return plugin.getLocaleManager().formatMessage(key, args);
+    private Component message(CommandSender viewer, String key, Object... args) {
+        return viewer == null
+                ? plugin.getLocaleManager().formatMessage(key, args)
+                : plugin.getLocaleManager().formatMessage(viewer, key, args);
     }
 
-    private List<Component> messageList(String key) {
-        return plugin.getLocaleManager().formatMessageList(key);
+    private List<Component> messageList(CommandSender viewer, String key) {
+        return viewer == null
+                ? plugin.getLocaleManager().formatMessageList(key)
+                : plugin.getLocaleManager().formatMessageList(viewer, key);
     }
 }

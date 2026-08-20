@@ -12,12 +12,19 @@ softdepend:
 # Resolved at first startup into this plugin's own classloader, so a different Jedis version
 # shipped by another plugin cannot clash with ours.
 libraries:
-  - redis.clients:jedis:5.2.0
+  - redis.clients:jedis:${jedisVersion}
+  # Jedis' pool configuration is referenced directly by JedisRedisClient, so it is listed in its own
+  # right rather than relied on as a transitive that a future Jedis might shade or drop.
+  - org.apache.commons:commons-pool2:${commonsPoolVersion}
+  # Statistics storage. Paper happens to ship a driver today, but depending on that is not a plan.
+  - org.xerial:sqlite-jdbc:${sqliteVersion}
 commands:
   mythicbedwars:
     description: "Main MythicBedwars command"
-    usage: "/mythicbedwars <toggle|reload|stats|arena>"
-    permission: mythicbedwars.admin
+    usage: "/mythicbedwars <event|toggle|reload|stats|arena|balance|pathways|voting>"
+    # Deliberately NOT permission-gated at the command level. Bukkit would reject an ordinary player
+    # before the executor ran, and "/mb event join" is the relog-proof way to sign up once a chat
+    # button has expired. CommandManager checks mythicbedwars.admin per subcommand instead.
     aliases: [mb, mbw]
   mbspec:
     description: "MythicBedwars spectator commands"

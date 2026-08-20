@@ -29,8 +29,12 @@ public class VotingManager {
         // Defence in depth: an event arena must never get a session, because endVoting() would then
         // overwrite the pre-seeded result and could turn magic off mid-event.
         if (plugin.isEventArena(arena.getName())) {
-            votingResults.put(arena.getName(), true);
-            MythicBedwars.getInstance().log("Voting bypassed for event arena: {}", arena.getName());
+            // Seed the configured value, not a hardcoded true. Hardcoding it would silently turn
+            // magic on for an operator who runs events with force-magic off.
+            boolean forced = plugin.getConfigManager().isEventForceMagic();
+            votingResults.put(arena.getName(), forced);
+            MythicBedwars.getInstance().log("Voting bypassed for event arena {} (magic {}).",
+                    arena.getName(), forced ? "on" : "off");
             return;
         }
 

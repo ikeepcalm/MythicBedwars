@@ -17,12 +17,19 @@ import java.util.stream.Stream;
 /**
  * {@code /mb event ...} — the cross-server event controls, available in both roles.
  *
- * <p>Only {@code status} exists so far; the recruitment and hosting subcommands land with the
- * phases that implement them.
+ * <p>{@code join} is the only branch ordinary players reach, and the only reason the parent command
+ * is not permission-gated as a whole: a chat button dies with the connection that rendered it, so
+ * somebody who reconnects mid-drive needs a way in that survives a relog. Everything else here needs
+ * {@code mythicbedwars.admin}, checked per branch.
  */
 public class EventCommand {
 
     public static final List<String> SUBCOMMANDS = List.of("status", "join", "preview", "start", "cancel", "send");
+
+    /**
+     * The one subcommand a player without admin may use.
+     */
+    private static final List<String> PLAYER_SUBCOMMANDS = List.of("join");
 
     private final MythicBedwars plugin;
 
@@ -39,7 +46,15 @@ public class EventCommand {
             return;
         }
 
-        switch (args[1].toLowerCase()) {
+        String subcommand = args[1].toLowerCase();
+
+        // join carries its own permission; everything else is administrative.
+        if (!"join".equals(subcommand) && !sender.hasPermission("mythicbedwars.admin")) {
+            sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.no_permission"));
+            return;
+        }
+
+        switch (subcommand) {
             case "status" -> handleStatus(sender);
             case "join" -> handleJoin(sender);
             case "preview" -> handlePreview(sender);
@@ -51,23 +66,36 @@ public class EventCommand {
     }
 
     public void sendHelp(CommandSender sender) {
-        sender.sendMessage(Component.text("/mb event status - Cross-server link diagnostics", NamedTextColor.YELLOW));
         sender.sendMessage(Component.text("/mb event join - Sign up for the event being advertised",
                 NamedTextColor.YELLOW));
+
+        if (!sender.hasPermission("mythicbedwars.admin")) {
+            return;
+        }
+
+        sender.sendMessage(Component.text("/mb event status - Cross-server link diagnostics", NamedTextColor.YELLOW));
         sender.sendMessage(Component.text("/mb event preview - Show the announcement without starting anything",
                 NamedTextColor.YELLOW));
-        sender.sendMessage(Component.text("/mb event start - Ask a Bedwars server to host an event (SMP only)",
+        sender.sendMessage(Component.text("/mb event start - Offer an event now, ignoring the quiet period (SMP only)",
                 NamedTextColor.YELLOW));
         sender.sendMessage(Component.text("/mb event cancel - Call off the event in flight", NamedTextColor.YELLOW));
         sender.sendMessage(Component.text("/mb event send <player> <smp|minigame|server> - Move a player across the proxy",
                 NamedTextColor.YELLOW));
     }
 
-    public List<String> tabComplete(String[] args) {
+    public List<String> tabComplete(CommandSender sender, String[] args) {
+        List<String> visible = sender.hasPermission("mythicbedwars.admin")
+                ? SUBCOMMANDS
+                : PLAYER_SUBCOMMANDS;
+
         if (args.length == 2) {
-            return SUBCOMMANDS.stream()
+            return visible.stream()
                     .filter(s -> s.startsWith(args[1].toLowerCase()))
                     .toList();
+        }
+
+        if (!sender.hasPermission("mythicbedwars.admin")) {
+            return List.of();
         }
 
         if (args.length == 3 && "send".equalsIgnoreCase(args[1])) {
@@ -113,7 +141,7 @@ public class EventCommand {
     private void handlePreview(CommandSender sender) {
         RecruitmentManager recruitment = plugin.getRecruitmentManager();
         if (recruitment == null) {
-            sender.sendMessage(Component.text("Only the SMP server advertises events.", NamedTextColor.RED));
+            admin(sender, "Only the SMP server advertises events.", NamedTextColor.RED);
             return;
         }
 
@@ -123,17 +151,17 @@ public class EventCommand {
     private void handleStart(CommandSender sender) {
         RecruitmentManager recruitment = plugin.getRecruitmentManager();
         if (recruitment == null) {
-            sender.sendMessage(Component.text("Only the SMP server can start an event.", NamedTextColor.RED));
+            admin(sender, "Only the SMP server can start an event.", NamedTextColor.RED);
             return;
         }
 
-        sender.sendMessage(Component.text("Asking for a host...", NamedTextColor.GRAY));
+        admin(sender, "Asking for a host (ignoring the quiet period)...", NamedTextColor.GRAY);
         recruitment.propose(true, problem -> {
             if (problem == null) {
-                sender.sendMessage(Component.text("Proposed. Watch the console for the host's answer.",
-                        NamedTextColor.GREEN));
+                admin(sender, "Offered. Nothing is announced to players until a host accepts.",
+                        NamedTextColor.GREEN);
             } else {
-                sender.sendMessage(Component.text(problem, NamedTextColor.RED));
+                admin(sender, problem, NamedTextColor.RED);
             }
         });
     }
@@ -141,17 +169,24 @@ public class EventCommand {
     private void handleCancel(CommandSender sender) {
         RecruitmentManager recruitment = plugin.getRecruitmentManager();
         if (recruitment != null) {
-            recruitment.cancel(CancelReason.ADMIN, message ->
-                    sender.sendMessage(Component.text(message, NamedTextColor.YELLOW)));
+            recruitment.cancel(CancelReason.ADMIN, message -> admin(sender, message, NamedTextColor.YELLOW));
             return;
         }
 
         int released = plugin.cancelHostedEvents(CancelReason.ADMIN);
         if (released == 0) {
-            sender.sendMessage(Component.text("No event is being hosted here.", NamedTextColor.YELLOW));
+            admin(sender, "No event is being hosted here.", NamedTextColor.YELLOW);
         } else {
-            sender.sendMessage(Component.text("Released " + released + " reserved arena(s).", NamedTextColor.YELLOW));
+            admin(sender, "Released " + released + " reserved arena(s).", NamedTextColor.YELLOW);
         }
+    }
+
+    /**
+     * Diagnostic output, tagged so it is not mistaken for an ordinary chat message.
+     */
+    private void admin(CommandSender sender, String message, NamedTextColor colour) {
+        sender.sendMessage(Component.text("[MythicBedwars] ", NamedTextColor.LIGHT_PURPLE)
+                .append(Component.text(message, colour)));
     }
 
     /**
@@ -159,22 +194,27 @@ public class EventCommand {
      */
     private void handleSend(CommandSender sender, String[] args) {
         if (args.length < 4) {
-            sender.sendMessage(Component.text("Usage: /mb event send <player> <smp|minigame|server>", NamedTextColor.RED));
+            admin(sender, "Usage: /mb event send <player> <smp|minigame|server>", NamedTextColor.RED);
             return;
         }
 
         Player target = Bukkit.getPlayerExact(args[2]);
         if (target == null) {
-            sender.sendMessage(Component.text("Player '" + args[2] + "' is not online here.", NamedTextColor.RED));
+            admin(sender, "Player '" + args[2] + "' is not online here.", NamedTextColor.RED);
             return;
         }
 
         String destination = resolveServerName(args[3]);
+        if (destination == null || destination.isBlank()) {
+            admin(sender, "No Velocity server name is configured for '" + args[3] + "'.", NamedTextColor.RED);
+            return;
+        }
+
         if (plugin.getTransferService().transfer(target, destination)) {
             target.sendMessage(plugin.getLocaleManager().formatMessage("magic.event.transferring", "server", destination));
-            sender.sendMessage(Component.text("Sending " + target.getName() + " to " + destination + "...", NamedTextColor.GREEN));
+            admin(sender, "Sending " + target.getName() + " to " + destination + "...", NamedTextColor.GREEN);
         } else {
-            sender.sendMessage(Component.text("Could not send " + target.getName() + " to " + destination + ".", NamedTextColor.RED));
+            admin(sender, "Could not send " + target.getName() + " to " + destination + ".", NamedTextColor.RED);
         }
     }
 

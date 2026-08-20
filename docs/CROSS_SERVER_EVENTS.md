@@ -30,16 +30,32 @@ distinct from COI's `coi`, so sharing one instance is fine.
 network:
   enabled: true
   role: SMP
-  server-id: "smp-1"          # must be unique across the network
+  server-id: "smp-1"          # REQUIRED and unique; startup refuses without it
   velocity:
-    this-server: "survival"   # this server's name in velocity.toml
+    this-server: "survival"   # REQUIRED - this server's name in velocity.toml
     smp-server: "survival"
     minigame-server: "bedwars"
   redis:
     host: "10.0.0.5"
     port: 6379
     password: ""
+  event:
+    # Read on this side: the SMP decides how big an event to ask for, and advertises the cap.
+    min-players: 4
+    max-players: 16
+    cooldown-minutes: 60
+    # Off by default. With it on, the SMP offers a match by itself once enough players have been
+    # idle - which is the difference between a feature that runs and one that waits to be asked.
+    auto-propose: false
+    auto-propose-interval-seconds: 300
+    auto-propose-min-idle-players: 8
+    idle-threshold-seconds: 300
 ```
+
+`server-id` and `velocity.this-server` are validated at startup. Both fail silently and
+confusingly if left unset — two servers sharing an id overwrite each other's heartbeat and each
+accepts messages addressed to the other; a blank `this-server` makes every transfer a no-op — so
+the plugin now refuses to join the network rather than half-working.
 
 ### Bedwars server — `plugins/MythicBedwars/config.yml`
 
@@ -57,11 +73,24 @@ network:
     port: 6379
     password: ""
   event:
-    min-players: 4
-    max-players: 16
     signup-seconds: 120       # read by this role only - see note below
+    arrival-grace-seconds: 60
+    start-countdown-seconds: 5
+    min-arrivals: 4
+    # Team count to favour when several arenas fit the turnout equally well. Four is the classic
+    # Bedwars shape: it is what puts sixteen players on a 4x4 rather than an 8x2, and four on a
+    # 1v1v1v1 rather than a 2v2. Capacity fit always comes first.
+    preferred-team-count: 4
+    allow-spectators: true
+    announce-locally: true    # tell locals when spare slots open to them
     arena-whitelist: []       # empty = any eligible arena
 ```
+
+**Arena choice follows the turnout.** The selector scores capacity fit above everything else, then
+prefers `preferred-team-count`, and picks **at random** among equally good fits so a regular event
+does not always run on the same map. The arena has to be reserved before signups open, on an
+estimate; once signups close and the real number is known, the host will move to a materially
+better-fitting free arena — nobody has been transferred yet at that point, so the swap is safe.
 
 **The host owns the signup window.** `signup-seconds`, `arrival-grace-seconds`,
 `start-countdown-seconds` and the arena filters are read on the **MINIGAME** side. The host commits
@@ -89,16 +118,18 @@ acting:
 
 ## Commands
 
-All under `mythicbedwars.admin` except `join`.
+`/mythicbedwars` is **not** permission-gated as a command — Bukkit would reject an ordinary player
+before the executor ran, and `/mb event join` has to work for exactly those players. Every
+subcommand except `event join` checks `mythicbedwars.admin` itself.
 
 | Command | Where | What |
 |---|---|---|
 | `/mb event status` | both | Role, Redis state, live peers, event in flight |
 | `/mb event preview` | SMP | Renders the announcement without starting anything |
-| `/mb event start` | SMP | Proposes an event now, ignoring the cooldown |
+| `/mb event start` | SMP | Offers an event now, ignoring the quiet period. Nothing is announced to players until a host accepts. |
 | `/mb event cancel` | both | Calls off the event / releases held arenas |
-| `/mb event join` | SMP | Sign up (relog-proof alternative to clicking `[JOIN]`) |
-| `/mb event send <player> <smp\|minigame>` | both | Proxy transfer smoke test |
+| `/mb event join` | SMP | Sign up (relog-proof alternative to clicking `[ JOIN NOW ]`) |
+| `/mb event send <player> <smp\|minigame\|server>` | both | Proxy transfer smoke test. Also accepts a literal Velocity server name. |
 
 Permissions: `mythicbedwars.event.join` (default true), `mythicbedwars.event.exempt` (default
 false — holders never see event broadcasts).
@@ -151,8 +182,15 @@ SMP                                     Bedwars
 ```
 
 **Durability rule:** every transition is written to the event hash *before* it is published, so a
-dropped pub/sub message costs latency rather than the event. `EventReaperTask` sweeps anything that
-stops progressing (dead peer, blown deadline) every 30s.
+dropped pub/sub message costs latency rather than the event. `EventSyncTask` re-reads the hash every
+two seconds while an event is in flight and gives up locally if it has gone terminal;
+`EventReaperTask` sweeps anything that stopped progressing (dead peer, blown deadline) every 30s.
+
+**A server cannot message itself.** `RedisBus` registers each outgoing message id in its own dedup
+ring before publishing — so that a Redis which echoes a publish back cannot double-apply a
+transition — which also means a message published to your *own* role's channel never comes back.
+Anything that has to inform the local half calls it directly through `EventParticipant`. Getting
+this wrong is what made the reaper's own cancellations no-ops.
 
 **Exactly-once rewards:** an emit guard (`SADD rewards:granted:<event>`) stops a duplicate round-end
 paying twice; an apply guard (`SET NX rewards:claimed:<uuid>:<event>`) stops a popped-then-crashed
@@ -178,17 +216,22 @@ bundle applying twice.
 
 ## Known gaps
 
-- **`EventSyncTask` is not implemented.** A dropped pub/sub message currently stalls an event until
-  the reaper cancels it (~30–90s) rather than self-correcting in ~2s. The safety net exists; the
-  fast path does not.
-- **Announcement reward copy is prose, not numbers.** `magic.event.announce.rewards` names reward
-  *kinds*, not values, because the exact figures in `rewards.yml` are a first cut. Once tuned, put
-  real numbers in the copy.
-- **Everything on the Bedwars side is untested.** `EventOrchestrator`, `ArenaSelector`,
-  `EventArenaGuard`, `EventArenaListener`, `RewardService` and the return flow have never run
-  against a real MBedwars server — no jar was available to test with. The SMP half has been
-  exercised end to end against real Redis.
+- **Nothing on the Bedwars side has run against a real MBedwars server.** `EventOrchestrator`,
+  `ArenaSelector`, `EventArenaGuard`, `EventArenaListener`, `RewardService` and the return flow are
+  reviewed and compile against the 5.5.7 API, but no jar was available to test with. The SMP half
+  has been exercised end to end against real Redis. Treat the first live run as a test.
 - **AFK detection is movement-based** (sampled once a second). A genuinely stationary defender loses
   participation ratio; it scales the reward down rather than denying it, but it is a crude proxy.
-- **`rewards.yml` values are unbalanced guesses.** Calibrated against COI's own bounty range
-  (0.1–5% per objective), but they want real tuning.
+  Shop purchases now count as activity, which softens the worst case.
+- **Reward magnitudes are calibrated, not tuned.** Sized so a committed player gets six to eight
+  meaningful matches per sequence before COI's `event` acting cap starts refusing grants. That is a
+  judgement about how supplementary event play should feel, and it is worth revisiting with real
+  numbers.
+- **Exchange tokens are deliberately uncapped.** They touch no `ActingSource` ledger, so the daily
+  bundle limits and the acting cap do not bound them; only their roll weight does. See
+  `rewards.token-sequences`.
+- **Announcement reward copy is prose, not numbers.** `magic.event.announce.rewards` names reward
+  *kinds*, not values. Once the figures settle, put real ones in the copy.
+- **Arena selection is no longer deterministic across hosts.** Two Bedwars servers may pick
+  different arenas for the same roster. Harmless — only one wins the host claim — but it does mean
+  you cannot predict the map from the roster alone.

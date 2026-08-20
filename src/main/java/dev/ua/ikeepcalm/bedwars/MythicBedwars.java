@@ -21,6 +21,7 @@ import dev.ua.ikeepcalm.bedwars.domain.stats.db.SQLiteDatabase;
 import dev.ua.ikeepcalm.bedwars.domain.voting.service.VotingManager;
 import dev.ua.ikeepcalm.bedwars.listener.*;
 import dev.ua.ikeepcalm.bedwars.net.EventReaperTask;
+import dev.ua.ikeepcalm.bedwars.net.EventSyncTask;
 import dev.ua.ikeepcalm.bedwars.net.NetworkService;
 import dev.ua.ikeepcalm.bedwars.net.event.EventStore;
 import dev.ua.ikeepcalm.bedwars.net.minigame.EventArenaGuard;
@@ -65,6 +66,9 @@ public final class MythicBedwars extends JavaPlugin {
 
     private SQLiteDatabase database;
     private BukkitTask periodicSaveTask;
+    private EventReaperTask eventReaperTask;
+    private EventSyncTask eventSyncTask;
+    private dev.ua.ikeepcalm.bedwars.net.smp.ReturnGreeter returnGreeter;
     private int saveIntervalSeconds;
 
     private CircleOfImaginationAPI circleOfImaginationAPI;
@@ -144,6 +148,65 @@ public final class MythicBedwars extends JavaPlugin {
         return this.recruitmentManager;
     }
 
+    private static String format(String template, Object... objects) {
+        if (objects == null || objects.length == 0) {
+            return template;
+        }
+
+        StringBuilder out = new StringBuilder(template.length() + 16);
+        int cursor = 0;
+        int next = 0;
+
+        while (next < objects.length) {
+            int at = template.indexOf("{}", cursor);
+            if (at < 0) {
+                break;
+            }
+            out.append(template, cursor, at);
+            Object value = objects[next++];
+            out.append(value == null ? "null" : value.toString());
+            cursor = at + 2;
+        }
+
+        out.append(template, cursor, template.length());
+        return out.toString();
+    }
+
+    /**
+     * @return the survival-server greeter, or {@code null} in the minigame role
+     */
+    public dev.ua.ikeepcalm.bedwars.net.smp.ReturnGreeter getReturnGreeter() {
+        return this.returnGreeter;
+    }
+
+    /**
+     * @return whichever half of the event system this role runs, or {@code null} when events are
+     * switched off. Role-neutral so the reaper and the sync pass never name a role-specific type.
+     */
+    public dev.ua.ikeepcalm.bedwars.net.EventParticipant getEventParticipant() {
+        if (eventOrchestrator != null) {
+            return eventOrchestrator;
+        }
+        return recruitmentManager;
+    }
+
+    /**
+     * Runs Redis work off the main thread — except during shutdown, when it runs inline.
+     *
+     * <p>Bukkit clears {@code isEnabled} before invoking {@code onDisable}, and the scheduler
+     * refuses tasks from a disabled plugin by throwing. A shutdown path that scheduled would abort
+     * {@code onDisable} partway through and skip the final statistics save, so at that point a
+     * blocking call is the correct trade.
+     */
+    public void offMainThread(Runnable task) {
+        if (!isEnabled()) {
+            task.run();
+            return;
+        }
+
+        Bukkit.getScheduler().runTaskAsynchronously(this, task);
+    }
+
     /**
      * Whether an arena is currently reserved for a cross-server event.
      *
@@ -153,6 +216,13 @@ public final class MythicBedwars extends JavaPlugin {
      */
     public boolean isEventArena(String arenaName) {
         return eventOrchestrator != null && eventOrchestrator.isEventArena(arenaName);
+    }
+
+    /**
+     * @return whether cross-server messaging is usable right now
+     */
+    public boolean isNetworkAvailable() {
+        return networkService != null && networkService.isAvailable();
     }
 
     @Override
@@ -167,11 +237,14 @@ public final class MythicBedwars extends JavaPlugin {
         localeLoader = new LocaleLoader(this, LocaleLoader.Locale.EN);
         localeLoader.loadLocales();
 
-        // Cross-server support is opt-in, so an existing install that never heard of it keeps
-        // booting as a minigame server exactly as before.
-        this.networkRole = configLoader.isNetworkEnabled()
-                ? configLoader.getNetworkRole()
-                : NetworkRole.MINIGAME;
+        // Cross-server messaging is opt-in, but the ROLE is not tied to it: a survival server with
+        // networking switched off for maintenance still has no MBedwars, and forcing it to MINIGAME
+        // there would disable the whole plugin with a misleading "MBedwars not found".
+        this.networkRole = configLoader.getNetworkRole();
+        if (configLoader.hasUnparseableNetworkRole()) {
+            log("Could not read network.role '{}' - falling back to {}. Valid values are SMP and MINIGAME.",
+                    configLoader.getRawNetworkRole(), networkRole);
+        }
 
         circleOfImaginationAPI = loadCircleOfImagination();
         if (circleOfImaginationAPI == null) {
@@ -180,7 +253,10 @@ public final class MythicBedwars extends JavaPlugin {
             return;
         }
 
-        coiCapabilities = CoiCapabilities.probe(circleOfImaginationAPI);
+        rewardConfig = new RewardConfig(this);
+        rewardConfig.load();
+
+        coiCapabilities = CoiCapabilities.probe(circleOfImaginationAPI, rewardConfig.actingSourceName());
         if (coiCapabilities.isDegraded()) {
             log("Running against an older CircleOfImagination ({}) - event rewards will be substituted where unsupported.",
                     coiCapabilities.describe());
@@ -204,8 +280,12 @@ public final class MythicBedwars extends JavaPlugin {
         }
 
         if (configLoader.isNetworkEnabled()) {
+            if (!validateNetworkIdentity()) {
+                log("Cross-server events are disabled until network.yml identity settings are fixed.");
+                return;
+            }
+
             networkService = new NetworkService(this);
-            networkService.start();
             startEventSubsystem();
         }
     }
@@ -309,43 +389,37 @@ public final class MythicBedwars extends JavaPlugin {
     }
 
     /**
-     * Brings up the half of the event system this role is responsible for. Runs after the network
-     * service, because both halves need the bus to register their handlers on.
+     * Refuses to join the network without a usable identity.
+     *
+     * <p>Both of these fail silently and confusingly if left at their defaults. Two servers sharing
+     * a {@code server-id} overwrite each other's heartbeat and each accepts messages addressed to
+     * the other; a blank {@code velocity.this-server} makes every transfer request a no-op, so an
+     * entire roster is counted as no-shows with nothing but per-player log lines to explain it.
      */
-    private void startEventSubsystem() {
-        EventStore store = new EventStore(networkService.client(), networkService.keys(),
-                configLoader.getEventTtlSeconds());
+    private boolean validateNetworkIdentity() {
+        boolean ok = true;
 
-        rewardConfig = new RewardConfig(this);
-        rewardConfig.load();
-
-        RewardQueue rewardQueue = new RewardQueue(this, networkService.client(),
-                networkService.keys(), rewardConfig);
-
-        if (isMinigameRole()) {
-            returnService = new EventReturnService(this, networkService);
-            rewardService = new RewardService(this, rewardConfig, rewardQueue);
-
-            eventOrchestrator = new EventOrchestrator(this, networkService, store);
-            eventOrchestrator.registerHandlers();
-
-            Bukkit.getPluginManager().registerEvents(new EventArenaGuard(this, eventOrchestrator), this);
-            Bukkit.getPluginManager().registerEvents(
-                    new EventArenaListener(this, eventOrchestrator, returnService, rewardService), this);
-
-            eventOrchestrator.recoverOnBoot();
-        } else {
-            recruitmentManager = new RecruitmentManager(this, networkService, store);
-            recruitmentManager.registerHandlers();
-
-            RewardRedeemer redeemer = new RewardRedeemer(this, rewardConfig, rewardQueue);
-            Bukkit.getPluginManager().registerEvents(new SmpEventListener(this, redeemer), this);
-
-            recruitmentManager.recoverOnBoot();
+        String serverId = configLoader.getServerId();
+        if (serverId == null || serverId.isBlank()) {
+            log("network.server-id is not set. Give every backend its own unique id.");
+            ok = false;
         }
 
-        long reapTicks = Math.max(1, configLoader.getEventReapIntervalSeconds()) * 20L;
-        new EventReaperTask(this, networkService, store).runTaskTimerAsynchronously(this, reapTicks, reapTicks);
+        String thisServer = configLoader.getThisVelocityServer();
+        if (thisServer == null || thisServer.isBlank()) {
+            log("network.velocity.this-server is not set. It must match this backend's name in velocity.toml.");
+            ok = false;
+        }
+
+        String target = networkRole == NetworkRole.SMP
+                ? configLoader.getMinigameVelocityServer()
+                : configLoader.getSmpVelocityServer();
+        if (target == null || target.isBlank()) {
+            log("The Velocity name of the server players are sent to is not set; transfers cannot work.");
+            ok = false;
+        }
+
+        return ok;
     }
 
     private void bindCommand(String name, CommandExecutor executor, TabCompleter completer) {
@@ -367,53 +441,58 @@ public final class MythicBedwars extends JavaPlugin {
         return Bukkit.getServer().getServicesManager().load(CircleOfImaginationAPI.class);
     }
 
-    @Override
-    public void onDisable() {
-        if (eventOrchestrator != null) {
-            eventOrchestrator.shutdown();
-            eventOrchestrator = null;
-        }
+    /**
+     * Brings up the half of the event system this role is responsible for. Runs after the network
+     * service, because both halves need the bus to register their handlers on.
+     */
+    private void startEventSubsystem() {
+        EventStore store = new EventStore(networkService.client(), networkService.keys(),
+                configLoader.getEventTtlSeconds());
 
-        if (networkService != null) {
-            networkService.shutdown();
-            networkService = null;
-        }
+        RewardQueue rewardQueue = new RewardQueue(this, networkService.client(),
+                networkService.keys(), rewardConfig);
 
-        if (periodicSaveTask != null && !periodicSaveTask.isCancelled()) {
-            periodicSaveTask.cancel();
-            log("Cancelled periodic statistics save task.");
-        }
+        if (isMinigameRole()) {
+            returnService = new EventReturnService(this, networkService);
+            rewardService = new RewardService(this, rewardConfig, rewardQueue);
 
-        if (spectatorManager != null) {
-            spectatorManager.shutdown();
-            log("Spectator manager shut down.");
-        }
+            eventOrchestrator = new EventOrchestrator(this, networkService, store);
+            eventOrchestrator.registerHandlers();
 
-        if (statisticsManager != null && database != null && database.isConnected()) {
-            log("Saving final statistics synchronously on disable...");
-            database.saveStatistics(statisticsManager.getPathwayStatistics(), true).thenRun(() -> {
-                log("Final statistics saved.");
-            }).exceptionally(ex -> {
-                log("An unexpected issue occurred with the final save's CompletableFuture: " + ex.getMessage());
-                return null;
-            }).thenRun(() -> {
-                database.close();
-                log("Database connection closed.");
-            });
+            Bukkit.getPluginManager().registerEvents(new EventArenaGuard(this, eventOrchestrator), this);
+            Bukkit.getPluginManager().registerEvents(
+                    new EventArenaListener(this, eventOrchestrator, returnService, rewardService), this);
+
         } else {
-            if (database != null && !database.isConnected()) {
-                log("Could not save final statistics: Database not connected.");
-            } else if (database != null) {
-                database.close();
-                log("Database connection closed (statistics or manager was null).");
-            }
+            recruitmentManager = new RecruitmentManager(this, networkService, store);
+            recruitmentManager.registerHandlers();
+
+            returnGreeter = new dev.ua.ikeepcalm.bedwars.net.smp.ReturnGreeter(this, networkService);
+
+            RewardRedeemer redeemer = new RewardRedeemer(this, rewardConfig, rewardQueue);
+            Bukkit.getPluginManager().registerEvents(
+                    new SmpEventListener(this, redeemer, returnGreeter), this);
+
+            recruitmentManager.startAutoPropose();
         }
 
-        if (pathwayManager != null) {
-            pathwayManager.cleanupAll();
+        // Only now: every handler is registered, so a backlog redelivered on subscribe is dispatched
+        // rather than dropped.
+        networkService.start();
+
+        if (eventOrchestrator != null) {
+            eventOrchestrator.recoverOnBoot();
+        } else if (recruitmentManager != null) {
+            recruitmentManager.recoverOnBoot();
         }
 
-        log("MythicBedwars disabled!");
+        long reapTicks = Math.max(1, configLoader.getEventReapIntervalSeconds()) * 20L;
+        eventReaperTask = new EventReaperTask(this, networkService, store);
+        eventReaperTask.runTaskTimerAsynchronously(this, reapTicks, reapTicks);
+
+        long syncTicks = Math.max(1L, configLoader.getEventSyncIntervalSeconds()) * 20L;
+        eventSyncTask = new EventSyncTask(this, store);
+        eventSyncTask.runTaskTimerAsynchronously(this, syncTicks, syncTicks);
     }
 
     private CompletableFuture<Void> loadStatistics() {
@@ -488,15 +567,91 @@ public final class MythicBedwars extends JavaPlugin {
         }
     }
 
-    public void log(String message, Object... objects) {
-        if (message == null) return;
-        String formatted = message;
-        if (objects != null) {
-            for (Object obj : objects) {
-                String replacement = obj == null ? "null" : obj.toString();
-                formatted = formatted.replaceFirst("\\{\\}", java.util.regex.Matcher.quoteReplacement(replacement));
+    @Override
+    public void onDisable() {
+        if (eventSyncTask != null) {
+            eventSyncTask.cancel();
+            eventSyncTask = null;
+        }
+
+        if (eventReaperTask != null) {
+            eventReaperTask.cancel();
+            eventReaperTask = null;
+        }
+
+        if (eventOrchestrator != null) {
+            eventOrchestrator.shutdown();
+            eventOrchestrator = null;
+        }
+
+        if (recruitmentManager != null) {
+            recruitmentManager.shutdown();
+            recruitmentManager = null;
+        }
+
+        if (networkService != null) {
+            networkService.shutdown();
+            networkService = null;
+        }
+
+        if (periodicSaveTask != null && !periodicSaveTask.isCancelled()) {
+            periodicSaveTask.cancel();
+            log("Cancelled periodic statistics save task.");
+        }
+
+        if (spectatorManager != null) {
+            spectatorManager.shutdown();
+            log("Spectator manager shut down.");
+        }
+
+        if (statisticsManager != null && database != null && database.isConnected()) {
+            log("Saving final statistics synchronously on disable...");
+            database.saveStatistics(statisticsManager.getPathwayStatistics(), true).thenRun(() -> {
+                log("Final statistics saved.");
+            }).exceptionally(ex -> {
+                log("An unexpected issue occurred with the final save's CompletableFuture: " + ex.getMessage());
+                return null;
+            }).thenRun(() -> {
+                database.close();
+                log("Database connection closed.");
+            });
+        } else {
+            if (database != null && !database.isConnected()) {
+                log("Could not save final statistics: Database not connected.");
+            } else if (database != null) {
+                database.close();
+                log("Database connection closed (statistics or manager was null).");
             }
         }
+
+        if (pathwayManager != null) {
+            pathwayManager.cleanupAll();
+        }
+
+        log("MythicBedwars disabled!");
+    }
+
+    /**
+     * Console logging with {@code {}} placeholders.
+     *
+     * <p>Substitution walks the template once rather than calling {@code replaceFirst} per argument:
+     * a value that itself contains a placeholder would otherwise swallow the next argument and shift
+     * every placeholder after it.
+     *
+     * <p>Safe to call from any thread. Off the main thread it goes to the plugin logger, because the
+     * console sender is a Bukkit API object and Adventure's console serializer is not built for
+     * concurrent use.
+     */
+    public void log(String message, Object... objects) {
+        if (message == null) return;
+
+        String formatted = format(message, objects);
+
+        if (!Bukkit.isPrimaryThread()) {
+            getLogger().info(formatted);
+            return;
+        }
+
         Bukkit.getConsoleSender().sendMessage(Component.text("[MythicBedwars]").color(NamedTextColor.LIGHT_PURPLE).append(Component.text(" " + formatted)));
     }
 

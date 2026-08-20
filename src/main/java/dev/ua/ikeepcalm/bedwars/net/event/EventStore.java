@@ -13,6 +13,11 @@ import java.util.Optional;
  */
 public class EventStore {
 
+    /**
+     * How long a terminal event stays readable for peers still catching up.
+     */
+    private static final int RETIRED_RECORD_TTL_SECONDS = 120;
+
     private final RedisClient client;
     private final RedisKeys keys;
     private final int eventTtlSeconds;
@@ -73,8 +78,28 @@ public class EventStore {
     }
 
     /**
-     * Removes every key belonging to an event. Called once it reaches a terminal state, so a
-     * finished event does not sit around until its TTL.
+     * Retires a finished event.
+     *
+     * <p>Frees the network slot and the working sets immediately, but only shortens the event hash's
+     * life rather than deleting it. The hash is what a peer reconciles against, and deleting it in
+     * the same breath as publishing the cancellation would take away the durable record exactly when
+     * a peer that missed the message needs it. The remaining window is long enough for the sync pass
+     * to notice and short enough that nothing accumulates.
+     *
+     * <p>Note the pending-return hash is deliberately untouched: it outlives the event on purpose, so
+     * a player who is still travelling can be greeted correctly whenever they arrive.
+     */
+    public void retire(String eventId) {
+        client.expire(keys.event(eventId), RETIRED_RECORD_TTL_SECONDS);
+        client.delete(keys.eventHost(eventId));
+        client.delete(keys.eventRoster(eventId));
+        client.delete(keys.eventArrived(eventId));
+        releaseActiveSlot(eventId);
+    }
+
+    /**
+     * Removes every key belonging to an event, including the record itself. For an event nobody can
+     * still be reconciling against — one whose record was already unreadable, or a boot-time cleanup.
      */
     public void purge(String eventId) {
         client.delete(keys.event(eventId));

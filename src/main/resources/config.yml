@@ -11,7 +11,8 @@ network:
   # MINIGAME - the Bedwars server that hosts the matches
   role: MINIGAME
 
-  # Unique per backend. Two servers sharing an id overwrite each other's heartbeat.
+  # Unique per backend, and REQUIRED once network.enabled is true. Two servers sharing an id
+  # overwrite each other's heartbeat and each accepts messages addressed to the other.
   server-id: "bw-1"
 
   # Server names as they appear in velocity.toml. Requires bungee-plugin-message-channel to be
@@ -47,6 +48,16 @@ network:
     # advertises, further capped by the chosen arena's real capacity.
     min-players: 4
     max-players: 16
+
+    # --- SMP role: offering events without being asked -----------------------
+    # Off by default. With it on, the survival server offers a match on its own whenever enough
+    # people have been standing around doing nothing - which is the difference between a feature
+    # that runs and one that waits for an admin to remember it exists.
+    auto-propose: false
+    auto-propose-interval-seconds: 300
+    auto-propose-min-idle-players: 8
+    # How long without moving counts as "idle", i.e. as somebody who might welcome something to do.
+    idle-threshold-seconds: 300
     # How long signups stay open once a host accepts.
     # Read by the MINIGAME role only: the host commits to holding its arena until this deadline and
     # sends it in its acceptance, so the SMP honours the host's value rather than its own.
@@ -78,6 +89,23 @@ network:
     event-ttl-seconds: 900
     # Event matches always run with magic on, bypassing the usual vote.
     force-magic: true
+    # Whether spectators may watch an event match. With this off, a player who dies and chooses to
+    # spectate is offered a ride home instead.
+    allow-spectators: true
+    # Whether players already on the Bedwars server are told when spare slots open to them. Without
+    # it they have no way of knowing - the recruitment broadcast goes out on the survival server.
+    announce-locally: true
+
+    # How often an in-flight event reconciles against its durable Redis record. Pub/sub has no
+    # replay, so this is what turns a dropped message into a two-second delay rather than an event
+    # that never finishes.
+    sync-interval-seconds: 2
+
+    # Team count to favour when several arenas hold the turnout equally well. Four is the classic
+    # Bedwars shape: it is what makes sixteen players land on a 4x4 rather than an 8x2, and four
+    # players on a 1v1v1v1 rather than a 2v2. Capacity fit always comes first.
+    preferred-team-count: 4
+
     # Empty whitelist means any eligible arena. Blacklist always wins.
     arena-whitelist: []
     arena-blacklist: []
@@ -150,6 +178,12 @@ pathways:
     - "nightmare"
     - "travellers-door"
     - "divination"
+
+# Shop limits, per sequence. Omitted or -1 means unlimited.
+# Keys are sequence-0 .. sequence-9, where a LOWER number is a stronger Beyonder - so the tighter
+# limits belong at the low end.
+shop:
+  max-purchases: { }
 
 # Spectator features
 spectator:

@@ -22,20 +22,10 @@ import java.util.stream.Stream;
  */
 public class MinigameSubcommands {
 
-    public static final List<String> SUBCOMMANDS = List.of("stats", "arena", "balance", "pathways", "voting");
-
     private final MythicBedwars plugin;
 
     public MinigameSubcommands(MythicBedwars plugin) {
         this.plugin = plugin;
-    }
-
-    /**
-     * @return {@code true} when {@code subcommand} belongs to this group, regardless of whether the
-     * current role can actually serve it
-     */
-    public static boolean handles(String subcommand) {
-        return SUBCOMMANDS.contains(subcommand.toLowerCase());
     }
 
     /**
@@ -115,6 +105,7 @@ public class MinigameSubcommands {
 
     private void handleStats(CommandSender sender) {
         var stats = plugin.getStatisticsManager().getPathwayStatistics();
+        // Printed to the sender, not the console - the docs used to claim otherwise.
         sender.sendMessage(Component.text("=== MythicBedwars Statistics ===", NamedTextColor.GOLD));
 
         stats.forEach((pathway, data) -> {
@@ -134,8 +125,9 @@ public class MinigameSubcommands {
         boolean enable = "enable".equalsIgnoreCase(args[1]);
 
         plugin.getConfigManager().setArenaEnabled(arenaName, enable);
-        String message = String.format("MythicBedwars %s for arena %s", enable ? "enabled" : "disabled", arenaName);
-        sender.sendMessage(Component.text(message, enable ? NamedTextColor.GREEN : NamedTextColor.RED));
+        sender.sendMessage(plugin.getLocaleManager().formatMessage(
+                enable ? "magic.commands.arena_enabled" : "magic.commands.arena_disabled",
+                "arena", arenaName));
     }
 
     private void handleBalanceCommand(CommandSender sender, String[] args) {
@@ -144,15 +136,16 @@ public class MinigameSubcommands {
             plugin.getConfigManager().getConfig().set("pathways.auto-balance", !current);
             plugin.saveConfig();
 
-            String message = (!current) ? "Pathway balancing enabled!" : "Pathway balancing disabled!";
-            sender.sendMessage(Component.text(message, (!current) ? NamedTextColor.GREEN : NamedTextColor.RED));
+            sender.sendMessage(plugin.getLocaleManager().formatMessage(
+                    current ? "magic.commands.balance_disabled" : "magic.commands.balance_enabled"));
             return;
         }
 
         switch (args[0].toLowerCase()) {
             case "report" -> {
                 plugin.getPathwayBalancer().printBalanceReport();
-                sender.sendMessage(Component.text("Balance report printed to console!", NamedTextColor.GREEN));
+                sender.sendMessage(plugin.getLocaleManager().formatMessage(
+                        "magic.commands.balance_report_printed"));
             }
             case "info" -> {
                 boolean enabled = plugin.getConfigManager().isPathwayBalancingEnabled();
@@ -197,9 +190,11 @@ public class MinigameSubcommands {
                 if (disabledPathways.remove(pathway)) {
                     plugin.getConfigManager().getConfig().set("pathways.disabled", disabledPathways);
                     plugin.saveConfig();
-                    sender.sendMessage(Component.text("Enabled pathway: " + pathway, NamedTextColor.GREEN));
+                    sender.sendMessage(plugin.getLocaleManager().formatMessage(
+                            "magic.commands.pathway_enabled", "pathway", pathway));
                 } else {
-                    sender.sendMessage(Component.text("Pathway " + pathway + " is already enabled", NamedTextColor.YELLOW));
+                    sender.sendMessage(plugin.getLocaleManager().formatMessage(
+                            "magic.commands.pathway_already_enabled", "pathway", pathway));
                 }
             }
             case "disable" -> {
@@ -207,9 +202,11 @@ public class MinigameSubcommands {
                     disabledPathways.add(pathway);
                     plugin.getConfigManager().getConfig().set("pathways.disabled", disabledPathways);
                     plugin.saveConfig();
-                    sender.sendMessage(Component.text("Disabled pathway: " + pathway, NamedTextColor.RED));
+                    sender.sendMessage(plugin.getLocaleManager().formatMessage(
+                            "magic.commands.pathway_disabled", "pathway", pathway));
                 } else {
-                    sender.sendMessage(Component.text("Pathway " + pathway + " is already disabled", NamedTextColor.YELLOW));
+                    sender.sendMessage(plugin.getLocaleManager().formatMessage(
+                            "magic.commands.pathway_already_disabled", "pathway", pathway));
                 }
             }
             default ->
