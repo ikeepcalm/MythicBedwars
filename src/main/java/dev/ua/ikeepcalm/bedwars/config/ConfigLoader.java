@@ -18,6 +18,12 @@ public class ConfigLoader {
         plugin.saveDefaultConfig();
         plugin.reloadConfig();
         config = plugin.getConfig();
+
+        // Writes anything this version added and clears out what it retired, so the file on disk is
+        // the whole truth about what the plugin will do. A no-op once it has run.
+        for (String change : ConfigBackfill.apply(plugin, config)) {
+            plugin.getLogger().info("config.yml: " + change);
+        }
     }
 
     /**
@@ -194,33 +200,34 @@ public class ConfigLoader {
     }
 
     /**
-     * @return whether the SMP offers events on its own when enough players are idle, rather than
-     * waiting for an admin to run {@code /mb event start}
+     * @return whether the SMP runs events on a schedule, rather than waiting for an admin to run
+     * {@code /mb event start}
      */
-    public boolean isEventAutoProposeEnabled() {
-        return config.getBoolean("network.event.auto-propose", false);
+    public boolean isEventScheduleEnabled() {
+        return config.getBoolean("network.event.schedule.enabled", true);
     }
 
     /**
-     * @return how often to consider offering an event
+     * @return how many hours must pass between scheduled events. This is the whole rule: one event
+     * per window, network-wide, whenever the population is there for it.
      */
-    public int getEventAutoProposeIntervalSeconds() {
-        return config.getInt("network.event.auto-propose-interval-seconds", 300);
+    public double getEventScheduleIntervalHours() {
+        return Math.max(0.25, config.getDouble("network.event.schedule.interval-hours", 5.0));
     }
 
     /**
-     * @return the fewest idle players worth offering an event to
+     * @return the fewest players who must be online for a scheduled event to be offered
      */
-    public int getEventAutoProposeMinIdlePlayers() {
-        return config.getInt("network.event.auto-propose-min-idle-players", 8);
+    public int getEventScheduleMinPlayers() {
+        return config.getInt("network.event.schedule.min-players", 40);
     }
 
     /**
-     * @return how long a player must have gone without moving to count as idle, i.e. as somebody who
-     * might welcome something to do
+     * @return how often the schedule is re-checked. Only the interval decides how often an event
+     * actually runs; this is just how promptly the window is noticed once the players are there.
      */
-    public int getEventIdleThresholdSeconds() {
-        return config.getInt("network.event.idle-threshold-seconds", 300);
+    public int getEventScheduleCheckSeconds() {
+        return config.getInt("network.event.schedule.check-seconds", 120);
     }
 
     /**

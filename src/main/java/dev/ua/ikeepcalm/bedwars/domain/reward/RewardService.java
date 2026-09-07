@@ -107,7 +107,7 @@ public class RewardService {
             return;
         }
 
-        double ratio = participationRatio(contribution);
+        double ratio = participationScale(contribution);
         String pathway = eventPathway(playerId);
         boolean isMvp = mvp != null && mvp.getKey().equals(playerId);
         String arenaName = arena.getName();
@@ -199,9 +199,26 @@ public class RewardService {
         return denialReason(contribution) == null;
     }
 
+    /**
+     * @return the share of the time they were in play that they looked like they were playing it
+     */
     private double participationRatio(Contribution contribution) {
-        long matchSeconds = Math.max(1, contribution.millisSinceJoin() / 1000);
-        return Math.min(1.0, (double) contribution.activeSeconds() / matchSeconds);
+        int sampled = contribution.sampledSeconds();
+        if (sampled <= 0) {
+            // Never sampled at all: eliminated inside the first second, or the sampler was not
+            // running because magic was off. Absence of evidence is not evidence of being away, and
+            // min-play-time and min-actions still stand between this and a free reward.
+            return 1.0;
+        }
+        return Math.min(1.0, (double) contribution.activeSeconds() / sampled);
+    }
+
+    /**
+     * @return what the participation grant is multiplied by. Floored, because an eligible player who
+     * spent the match holding a base has earned a smaller reward, not a token one.
+     */
+    private double participationScale(Contribution contribution) {
+        return Math.max(config.participationScaleFloor(), participationRatio(contribution));
     }
 
     /**

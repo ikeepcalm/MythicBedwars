@@ -249,6 +249,8 @@ public class EventCommand {
 
         RecruitmentManager recruitment = plugin.getRecruitmentManager();
         if (recruitment != null) {
+            sender.sendMessage(Component.text("Schedule: ", NamedTextColor.GRAY)
+                    .append(Component.text(recruitment.describeSchedule(), NamedTextColor.WHITE)));
             sender.sendMessage(Component.text("Event: ", NamedTextColor.GRAY)
                     .append(recruitment.currentEventId()
                             .map(id -> Component.text(id + " [" + recruitment.currentState() + "]"

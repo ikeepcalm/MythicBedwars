@@ -44,13 +44,28 @@ network:
     min-players: 4
     max-players: 16
     cooldown-minutes: 60
-    # Off by default. With it on, the SMP offers a match by itself once enough players have been
-    # idle - which is the difference between a feature that runs and one that waits to be asked.
-    auto-propose: false
-    auto-propose-interval-seconds: 300
-    auto-propose-min-idle-players: 8
-    idle-threshold-seconds: 300
+    # On by default: the SMP offers one match per interval-hours whenever min-players are online -
+    # the difference between a feature that runs and one that waits to be asked.
+    schedule:
+      enabled: true
+      interval-hours: 5
+      min-players: 40
+      check-seconds: 120
 ```
+
+Missing keys are **backfilled into the file on boot** (and on `/mb reload`), with their comments,
+and keys this version retired (`auto-propose*`, `idle-threshold-seconds`) are removed. So an older
+`config.yml` picks up the schedule block by itself, and what is on disk stays the whole truth about
+what the plugin will do. The same applies to `rewards.yml`: a `min-participation-ratio` still sitting
+at the old default of `0.25` is migrated to `0.10`, because the number is now measured against a
+different denominator. A file that already has its own value keeps it — nothing an admin chose is
+overwritten — though the rewrite does normalise Bukkit's YAML formatting (quotes and inline lists).
+
+**When the last event went out is remembered in `plugins/MythicBedwars/schedule.yml`.** The interval
+is also a Redis key with a matching TTL — that is what stops two survival nodes offering at once —
+but the file is what survives a restart of the server or of Redis, and on boot it is authoritative:
+if it says an event went out an hour ago, the next one is four hours away. Set `last-offered-at` to
+`0` to make one due at the next check. `/mb event status` prints the same figures.
 
 `server-id` and `velocity.this-server` are validated at startup. Both fail silently and
 confusingly if left unset — two servers sharing an id overwrite each other's heartbeat and each
@@ -128,7 +143,7 @@ what is still restart-only.
 `lobby-hold-seconds`, `start-countdown-seconds`, `min-arrivals`, `auto-return-seconds`,
 `winner-return-delay-seconds`, `cooldown-minutes`, `event-ttl-seconds`, `force-magic`,
 `preferred-team-count`, the arena filters, `allow-spectators`, `announce-locally`,
-`auto-propose*`, `idle-threshold-seconds`, `reap-interval-seconds`, `sync-interval-seconds`,
+the whole of `schedule:`, `reap-interval-seconds`, `sync-interval-seconds`,
 `propose-timeout-seconds`, `statistics.save-interval-seconds`, and the two target Velocity names.
 
 **Still needs a restart**, because each is consumed once while wiring the plugin up:
@@ -252,9 +267,12 @@ bundle applying twice.
   `ArenaSelector`, `EventArenaGuard`, `EventArenaListener`, `RewardService` and the return flow are
   reviewed and compile against the 5.5.7 API, but no jar was available to test with. The SMP half
   has been exercised end to end against real Redis. Treat the first live run as a test.
-- **AFK detection is movement-based** (sampled once a second). A genuinely stationary defender loses
-  participation ratio; it scales the reward down rather than denying it, but it is a crude proxy.
-  Shop purchases now count as activity, which softens the worst case.
+- **AFK detection is a heuristic, and deliberately a generous one.** Sampled once a second, a player
+  counts as active if they moved, turned their head, sent any client input in the last ten seconds,
+  or did anything recorded in the last minute (a kill, a bed, a purchase, a block placed or broken, a
+  hit landed or taken). The denominator is the seconds they were in play, not match length, so being
+  eliminated early costs nothing. What remains is that a truly unattended body can still be credited
+  briefly by a stray input, which is the side to err on.
 - **Reward magnitudes are calibrated, not tuned.** Sized so a committed player gets six to eight
   meaningful matches per sequence before COI's `event` acting cap starts refusing grants. That is a
   judgement about how supplementary event play should feel, and it is worth revisiting with real

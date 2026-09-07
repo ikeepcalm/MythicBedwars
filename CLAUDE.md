@@ -70,6 +70,7 @@ MythicBedwars
 │   ├── CommandManager.java          # router; permissions are per subcommand, not on the command
 │   └── Subcommands.java             # role-neutral subcommand names and permission nodes
 ├── config/
+│   ├── ConfigBackfill.java          # writes new keys into config.yml, removes retired ones
 │   ├── ConfigLoader.java            # one getter per key, inline defaults
 │   ├── LocaleLoader.java            # EN + UK, resolved per recipient
 │   └── NetworkRole.java             # SMP | MINIGAME
@@ -102,14 +103,16 @@ MythicBedwars
 │   ├── minigame/                    # host side: orchestrator, selector, reservation,
 │   │                                #   guard, listener, lobby hold, return service
 │   ├── protocol/                    # Envelope, Heartbeat, payloads, enums
-│   ├── smp/                         # recruit side: manager, announcer, signups,
-│   │                                #   listener, ReturnGreeter
+│   ├── smp/                         # recruit side: manager, announcer, signups, listener,
+│   │                                #   ReturnGreeter, ScheduleJournal (schedule.yml)
 │   ├── transport/                   # RedisClient/JedisRedisClient, RedisBus, RedisKeys, LuaScripts
 │   └── velocity/ServerTransferService.java
 └── MythicBedwars.java               # onEnable/onDisable, role split
 ```
 
 Resources: `config.yml`, `rewards.yml`, `plugin.yml`, `lang/lang-en.yml`, `lang/lang-uk.yml`.
+`schedule.yml` is written at runtime, not bundled: it is the SMP's record of when the last event
+went out, so `network.event.schedule` survives a restart of the server or of Redis.
 Feature documentation lives in `docs/CROSS_SERVER_EVENTS.md`.
 
 ---

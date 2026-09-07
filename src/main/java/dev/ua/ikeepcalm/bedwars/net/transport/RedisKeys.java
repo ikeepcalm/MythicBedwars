@@ -151,6 +151,17 @@ public final class RedisKeys {
     }
 
     /**
+     * Present for the rest of the current scheduled-event window, once it has been used.
+     *
+     * <p>Held in Redis rather than in memory so the schedule survives a restart and cannot be
+     * doubled by a second survival node: claiming it is how a server wins the right to run the
+     * event for this window, and its TTL is the interval itself.
+     */
+    public String scheduleWindow() {
+        return key("schedule", "window");
+    }
+
+    /**
      * @return the namespace prefix itself, for diagnostics
      */
     public String namespace() {

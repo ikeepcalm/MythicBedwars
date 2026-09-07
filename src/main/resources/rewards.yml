@@ -74,10 +74,15 @@ rewards:
     min-actions: 1
     # Matches smaller than this pay nothing, or two accounts could farm the winner tier.
     min-players: 4
-    # Below this share of the match spent active, participation is denied outright. Above it, the
-    # participation grant scales by the ratio; the winner tier is never scaled, because a carried
-    # teammate still genuinely won.
-    min-participation-ratio: 0.25
+    # Share of the time a player was *in play* (not of the whole match — being eliminated early
+    # costs nothing) that they must have looked active for. A sample counts if they moved, turned
+    # their head, sent any input in the last 10s, or did something in the last minute, so a defender
+    # standing on their bed island scores near 1.0. Only an unattended body sits below this.
+    min-participation-ratio: 0.10
+    # Above the threshold the participation grant scales by the ratio, but never below this floor —
+    # a quiet match is worth less, not worth nothing. The winner tier is never scaled, because a
+    # carried teammate still genuinely won.
+    participation-scale-floor: 0.5
     # Walking out of a running match forfeits. Losing, being eliminated, choosing to spectate, the
     # arena stopping, or the connection dropping do not.
     deny-rage-quit: true

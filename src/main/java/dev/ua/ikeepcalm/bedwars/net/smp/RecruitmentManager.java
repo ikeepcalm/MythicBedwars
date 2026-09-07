@@ -44,6 +44,8 @@ public class RecruitmentManager implements dev.ua.ikeepcalm.bedwars.net.EventPar
     private final EventStore store;
     private final RecruitmentAnnouncer announcer;
     private final SignupRegistry signups;
+    /** Durable record of when the last event went out, so the interval survives a restart. */
+    private final ScheduleJournal journal;
 
     /**
      * Reminder thresholds already fired for the current drive, so each fires once.
@@ -58,7 +60,7 @@ public class RecruitmentManager implements dev.ua.ikeepcalm.bedwars.net.EventPar
             new java.util.concurrent.atomic.AtomicBoolean();
     private volatile BukkitTask proposeTimeoutTask;
     private volatile int cap;
-    private volatile BukkitTask autoProposeTask;
+    private volatile BukkitTask scheduleTask;
 
     /**
      * Roster size as last observed, for reminder text without an extra Redis round trip.
@@ -77,6 +79,8 @@ public class RecruitmentManager implements dev.ua.ikeepcalm.bedwars.net.EventPar
         this.announcer = new RecruitmentAnnouncer(plugin);
         this.signups = new SignupRegistry(network.client(), network.keys(),
                 plugin.getConfigManager().getEventTtlSeconds());
+        this.journal = new ScheduleJournal(plugin);
+        this.journal.load();
     }
 
     public void registerHandlers() {
@@ -110,66 +114,119 @@ public class RecruitmentManager implements dev.ua.ikeepcalm.bedwars.net.EventPar
     }
 
     /**
-     * Starts the self-service loop, where the SMP offers an event whenever enough people are around
-     * with nothing to do. Without it every event needs an admin to type a command, which is how a
+     * Starts the schedule: at most one event per configured window, offered whenever the server has
+     * the players for it. Without it every event needs an admin to type a command, which is how a
      * feature built to revive a dead server ends up never running.
+     *
+     * <p>Deliberately <b>not</b> driven by how idle anybody looks. Guessing at who wants something
+     * to do from their AFK timer got both halves of the question wrong: a player at their keyboard
+     * doing quiet work counted as bored, an unattended body counted as an interested participant,
+     * and the server's own population — the one thing that actually decides whether a match is worth
+     * running — did not come into it at all.
      */
-    public void startAutoPropose() {
+    public void startSchedule() {
         // Idempotent, so /mb reload can re-arm it at a new interval, switch it on, or switch it off.
-        BukkitTask existing = autoProposeTask;
+        BukkitTask existing = scheduleTask;
         if (existing != null) {
             existing.cancel();
-            autoProposeTask = null;
+            scheduleTask = null;
         }
 
-        if (!plugin.getConfigManager().isEventAutoProposeEnabled()) {
+        if (!plugin.getConfigManager().isEventScheduleEnabled()) {
             return;
         }
 
-        long period = Math.max(60L, plugin.getConfigManager().getEventAutoProposeIntervalSeconds()) * 20L;
-        autoProposeTask = Bukkit.getScheduler().runTaskTimer(plugin, this::considerAutoPropose, period, period);
+        long period = Math.max(30L, plugin.getConfigManager().getEventScheduleCheckSeconds()) * 20L;
+        scheduleTask = Bukkit.getScheduler().runTaskTimer(plugin, this::considerScheduledEvent, period, period);
 
-        plugin.log("Auto-proposing events every {}s when at least {} players are idle.",
-                plugin.getConfigManager().getEventAutoProposeIntervalSeconds(),
-                plugin.getConfigManager().getEventAutoProposeMinIdlePlayers());
+        plugin.log("Scheduling one event every {} whenever at least {} players are online.",
+                scheduleInterval(),
+                plugin.getConfigManager().getEventScheduleMinPlayers());
     }
 
-    private void considerAutoPropose() {
-        if (currentEventId != null) {
+    private void considerScheduledEvent() {
+        if (currentEventId != null || !network.isAvailable()) {
             return;
         }
 
-        int idle = countIdlePlayers();
-        if (idle < plugin.getConfigManager().getEventAutoProposeMinIdlePlayers()) {
+        // The journal first, and locally: it is authoritative about when the last offer went out,
+        // costs nothing to ask, and keeps a two-minute tick from touching Redis 30 times an hour.
+        if (!journal.isDue(windowSeconds() * 1000L)) {
             return;
         }
 
-        // Cooldown is honoured here, unlike the admin command: this fires on a timer, and a server
-        // that offered a match five minutes ago should not offer another.
-        propose(false, problem -> {
-            if (problem != null) {
-                plugin.log("Auto-propose skipped: {}", problem);
+        int online = countEligiblePlayers();
+        if (online < plugin.getConfigManager().getEventScheduleMinPlayers()) {
+            return;
+        }
+
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            // Claiming the window is what keeps a second survival node from offering the same event
+            // in the same instant; its TTL matches the interval, so it also survives this server.
+            String token = UUID.randomUUID().toString();
+            if (!network.client().setIfAbsent(network.keys().scheduleWindow(), token, windowSeconds())) {
+                return;
             }
+
+            // Cooldown is honoured here, unlike the admin command: this fires on a timer, and a
+            // server that ran a match minutes ago should not immediately run another.
+            // tryPropose records the offer in the journal itself, so a manual start counts too.
+            String problem = tryPropose(false);
+            if (problem == null) {
+                plugin.log("Scheduled event offered with {} player(s) online; next window in {}.",
+                        online, scheduleInterval());
+                return;
+            }
+
+            // Nothing was offered, so do not spend the window on it - the next check should be free
+            // to try again as soon as whatever blocked it clears.
+            network.client().deleteIfEquals(network.keys().scheduleWindow(), token);
+            plugin.log("Scheduled event skipped: {}", problem);
         });
     }
 
     /**
-     * @return how many players look like they would welcome something to do
+     * @return the interval as something readable, so a whole number of hours does not print as "6.0"
      */
-    private int countIdlePlayers() {
-        long threshold = plugin.getConfigManager().getEventIdleThresholdSeconds() * 20L;
+    private String scheduleInterval() {
+        double hours = plugin.getConfigManager().getEventScheduleIntervalHours();
+        return hours == Math.rint(hours) ? (long) hours + "h" : hours + "h";
+    }
 
-        int idle = 0;
+    private int windowSeconds() {
+        double hours = plugin.getConfigManager().getEventScheduleIntervalHours();
+        return (int) Math.max(60L, Math.round(hours * 3600.0));
+    }
+
+    /**
+     * @return how many players are online who might actually turn up. Anyone opted out of event
+     * broadcasts is not counted, since they will never be asked.
+     */
+    private int countEligiblePlayers() {
+        int eligible = 0;
         for (Player player : Bukkit.getOnlinePlayers()) {
-            if (player.hasPermission("mythicbedwars.event.exempt")) {
-                continue;
-            }
-            if (player.getIdleDuration().toSeconds() * 20L >= threshold) {
-                idle++;
+            if (!player.hasPermission("mythicbedwars.event.exempt")) {
+                eligible++;
             }
         }
 
-        return idle;
+        return eligible;
+    }
+
+    /**
+     * @return a one-line description of the schedule, for {@code /mb event status}
+     */
+    public String describeSchedule() {
+        if (!plugin.getConfigManager().isEventScheduleEnabled()) {
+            return "disabled";
+        }
+
+        String due = ScheduleJournal.describeDuration(journal.millisUntilDue(windowSeconds() * 1000L));
+
+        return "every " + scheduleInterval() + " with "
+               + plugin.getConfigManager().getEventScheduleMinPlayers() + "+ players online ("
+               + countEligiblePlayers() + " now); last offered " + journal.describeLastOffered()
+               + ", next " + (due == null ? "due now" : "in " + due);
     }
 
     public Optional<String> currentEventId() {
@@ -274,6 +331,13 @@ public class RecruitmentManager implements dev.ua.ikeepcalm.bedwars.net.EventPar
                 Bukkit.getScheduler().runTask(plugin, this::clearLocal);
                 return "Could not reach the Bedwars server; nothing was announced.";
             }
+
+            // Every offer starts the interval running, however it was triggered. An admin who runs
+            // /mb event start has just held the event for this window, and the schedule should not
+            // add another one twenty minutes later - the quiet period an admin can override is the
+            // cooldown, not the calendar.
+            journal.recordOffered(eventId);
+            network.client().setWithTtl(network.keys().scheduleWindow(), eventId, windowSeconds());
 
             // A local deadline for the answer. Relying on the reaper for this does not work: it
             // publishes to its own role's channel, which never comes back to the publisher, so the
@@ -684,6 +748,8 @@ public class RecruitmentManager implements dev.ua.ikeepcalm.bedwars.net.EventPar
         Payloads.EventStarted started = network.bus().payload(envelope, Payloads.EventStarted.class);
         currentState = EventState.RUNNING;
 
+        journal.recordStarted(envelope.eventId());
+
         if (started != null) {
             announcer.broadcast("magic.event.started", "count", started.playerCount());
             plugin.log("Event {} is under way on {} with {} player(s).",
@@ -907,10 +973,10 @@ public class RecruitmentManager implements dev.ua.ikeepcalm.bedwars.net.EventPar
         stopSignupTask();
         cancelProposeTimeout();
 
-        BukkitTask auto = autoProposeTask;
-        if (auto != null) {
-            auto.cancel();
-            autoProposeTask = null;
+        BukkitTask scheduled = scheduleTask;
+        if (scheduled != null) {
+            scheduled.cancel();
+            scheduleTask = null;
         }
 
         String eventId = currentEventId;

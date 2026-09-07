@@ -1,5 +1,6 @@
 package dev.ua.ikeepcalm.bedwars.net.minigame;
 
+import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
 import de.marcely.bedwars.api.arena.ArenaStatus;
 import de.marcely.bedwars.api.arena.KickReason;
@@ -14,9 +15,13 @@ import dev.ua.ikeepcalm.bedwars.domain.reward.RewardService;
 import dev.ua.ikeepcalm.bedwars.net.protocol.source.ReturnOutcome;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 
 import java.util.ArrayList;
@@ -110,6 +115,52 @@ public class EventArenaListener implements Listener {
         }
 
         rewards.tracker().recordPurchase(arena.getName(), event.getPlayer().getUniqueId());
+    }
+
+    /**
+     * Building and mining count as being present. This is the whole life of a base defender: wool
+     * over the bed, obsidian over the wool, blocks back down after every raid — all of it done
+     * standing still, where a movement-only idle check sees nothing at all.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockPlace(BlockPlaceEvent event) {
+        markActive(event.getPlayer());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onBlockBreak(BlockBreakEvent event) {
+        markActive(event.getPlayer());
+    }
+
+    /**
+     * Fighting counts for both sides of the hit. A defender who is being shot at from a bridge is
+     * plainly at their keyboard even if they never land the kill that would be recorded.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onDamage(EntityDamageByEntityEvent event) {
+        if (event.getDamager() instanceof Player damager) {
+            markActive(damager);
+        } else if (event.getDamager() instanceof Projectile projectile
+                   && projectile.getShooter() instanceof Player shooter) {
+            markActive(shooter);
+        }
+
+        if (event.getEntity() instanceof Player victim) {
+            markActive(victim);
+        }
+    }
+
+    /**
+     * Credits one player with having done something, if they are in an event arena of ours. Cheap
+     * enough for a hot handler: an arena lookup and, off the event path, a timestamp write.
+     */
+    private void markActive(Player player) {
+        Arena arena = BedwarsAPI.getGameAPI().getArenaByPlayer(player);
+        if (arena == null || !orchestrator.isEventArena(arena.getName())) {
+            return;
+        }
+
+        rewards.tracker().recordActivity(arena.getName(), player.getUniqueId());
     }
 
     /**

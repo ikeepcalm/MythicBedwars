@@ -17,6 +17,32 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class MatchContributionTracker {
 
+    /**
+     * Squared position delta above which a sample counts as movement — a tenth of a block, and
+     * deliberately that small. All this number has to do is ignore a body standing perfectly still;
+     * a defender shifting their feet on their own bed island is playing.
+     */
+    private static final double MOVED_DISTANCE_SQUARED = 0.01;
+
+    /**
+     * Degrees of yaw or pitch change that count as looking around. An AFK client sends the same
+     * rotation forever; somebody watching a bridge does not.
+     */
+    private static final float LOOKED_DEGREES = 1.0f;
+
+    /**
+     * How recently the client must have sent an input for a sample to count wherever they happen to
+     * be standing. This is what covers a stationary defender: swinging, shooting, placing blocks and
+     * opening chests all move them nowhere at all.
+     */
+    private static final long INPUT_GRACE_SECONDS = 10L;
+
+    /**
+     * How long one recorded action keeps crediting activity. A player who lands a kill and then holds
+     * position for the next minute is defending, not away.
+     */
+    private static final long ACTION_GRACE_MILLIS = 60_000L;
+
     private final Map<String, Map<UUID, Contribution>> byArena = new ConcurrentHashMap<>();
     private final Map<UUID, Location> lastSeen = new ConcurrentHashMap<>();
 
@@ -49,42 +75,88 @@ public class MatchContributionTracker {
         } else {
             contribution.kills++;
         }
+        contribution.touch();
     }
 
     public void recordBedBreak(String arenaName, UUID playerId) {
-        of(arenaName, playerId).bedsBroken++;
+        Contribution contribution = of(arenaName, playerId);
+        contribution.bedsBroken++;
+        contribution.touch();
     }
 
     public void recordPurchase(String arenaName, UUID playerId) {
-        of(arenaName, playerId).purchases++;
+        Contribution contribution = of(arenaName, playerId);
+        contribution.purchases++;
+        contribution.touch();
     }
 
     /**
-     * Ticked once a second for players who are not idle, giving a participation ratio that scales
-     * the reward rather than gating it on a hard cliff.
+     * Notes that a player did something the scoreboard does not count — swung at somebody, took a
+     * hit, walled their bed back up. It earns no reward of its own; it only says "this account is
+     * being played", which is exactly what the participation ratio is trying to measure.
      */
-    public void recordActiveSecond(String arenaName, UUID playerId) {
-        of(arenaName, playerId).activeSeconds++;
+    public void recordActivity(String arenaName, UUID playerId) {
+        of(arenaName, playerId).touch();
     }
 
     /**
-     * Samples one player once. Counts the second only if they have moved since the last sample,
-     * which is a crude but honest proxy for actually playing - and crucially it degrades to
-     * "scaled-down reward" rather than "no reward", so a defender holding a base is not punished
-     * as harshly as a body left at spawn.
+     * Samples one player once, counting both the sample and whether they looked alive for it.
+     *
+     * <p>Movement alone is a bad proxy for playing Bedwars. Holding a base means standing on it,
+     * shooting whoever comes across the bridge and walling the bed back up — none of which involves
+     * travelling anywhere. So four independent signals are OR-ed and any one of them suffices:
+     * position, rotation, a recent client input, and a recent recorded action. Each can only add
+     * credit, never withdraw it, which is the direction this check should err in.
+     *
+     * <p>The denominator is the number of samples actually taken, never wall-clock match length.
+     * That matters as much as the signals do: sampling only happens while a player is in play, so
+     * somebody eliminated five minutes into a twenty-minute match is judged on those five minutes
+     * instead of being diluted towards zero by the fifteen they spent dead.
      */
     public void sample(String arenaName, Player player) {
         UUID playerId = player.getUniqueId();
+        Contribution contribution = of(arenaName, playerId);
+        contribution.sampledSeconds++;
+
         Location current = player.getLocation();
         Location previous = lastSeen.put(playerId, current.clone());
 
-        boolean moved = previous == null
-                        || !previous.getWorld().equals(current.getWorld())
-                        || previous.distanceSquared(current) > 0.25;
-
-        if (moved) {
-            recordActiveSecond(arenaName, playerId);
+        if (looksActive(player, contribution, previous, current)) {
+            contribution.activeSeconds++;
         }
+    }
+
+    private static boolean looksActive(Player player, Contribution contribution,
+                                       Location previous, Location current) {
+        if (previous == null || !current.getWorld().equals(previous.getWorld())) {
+            return true;
+        }
+
+        if (previous.distanceSquared(current) > MOVED_DISTANCE_SQUARED) {
+            return true;
+        }
+
+        if (angleDelta(previous.getYaw(), current.getYaw()) > LOOKED_DEGREES
+            || angleDelta(previous.getPitch(), current.getPitch()) > LOOKED_DEGREES) {
+            return true;
+        }
+
+        // Resets on essentially any packet the client sends, so it catches the actions that leave a
+        // defender standing exactly where they were.
+        if (player.getIdleDuration().toSeconds() < INPUT_GRACE_SECONDS) {
+            return true;
+        }
+
+        return contribution.millisSinceAction() < ACTION_GRACE_MILLIS;
+    }
+
+    /**
+     * @return the smaller of the two ways round the circle, so a player facing due north does not
+     * register a 359-degree turn every time their yaw crosses zero
+     */
+    private static float angleDelta(float from, float to) {
+        float delta = Math.abs(to - from) % 360f;
+        return delta > 180f ? 360f - delta : delta;
     }
 
     /**
@@ -130,6 +202,9 @@ public class MatchContributionTracker {
         private volatile int bedsBroken;
         private volatile int purchases;
         private volatile int activeSeconds;
+        private volatile int sampledSeconds;
+        /** When they last did something. {@code 0} means never. */
+        private volatile long lastActionAt;
         private volatile boolean forfeit;
 
         public int kills() {
@@ -152,8 +227,28 @@ public class MatchContributionTracker {
             return activeSeconds;
         }
 
+        /**
+         * @return how many times they were sampled, i.e. how many seconds of the match they spent
+         * in play rather than dead, spectating or already gone
+         */
+        public int sampledSeconds() {
+            return sampledSeconds;
+        }
+
         public long millisSinceJoin() {
             return System.currentTimeMillis() - joinedAt;
+        }
+
+        /**
+         * @return time since their last recorded action, or {@link Long#MAX_VALUE} if they have none
+         */
+        public long millisSinceAction() {
+            long at = lastActionAt;
+            return at == 0L ? Long.MAX_VALUE : System.currentTimeMillis() - at;
+        }
+
+        private void touch() {
+            lastActionAt = System.currentTimeMillis();
         }
 
         /**

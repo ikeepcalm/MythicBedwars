@@ -500,7 +500,7 @@ public final class MythicBedwars extends JavaPlugin {
             Bukkit.getPluginManager().registerEvents(
                     new SmpEventListener(this, redeemer, returnGreeter), this);
 
-            recruitmentManager.startAutoPropose();
+            recruitmentManager.startSchedule();
         }
 
         // Only now: every handler is registered, so a backlog redelivered on subscribe is dispatched
@@ -565,8 +565,8 @@ public final class MythicBedwars extends JavaPlugin {
         }
 
         if (recruitmentManager != null) {
-            recruitmentManager.startAutoPropose();
-            rearmed.add("auto-propose");
+            recruitmentManager.startSchedule();
+            rearmed.add("event schedule");
         }
 
         if (statisticsManager != null && database != null) {

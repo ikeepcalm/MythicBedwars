@@ -104,6 +104,9 @@ public class RewardConfig {
 
         config = YamlConfiguration.loadConfiguration(file);
 
+        // Before the defaults layer goes on, while isSet() still means "actually on disk".
+        backfill(file);
+
         // Bundled defaults back the on-disk copy, so a config written before a new key existed still
         // resolves it rather than silently behaving as if the feature were switched off.
         java.io.InputStream bundled = plugin.getResource("rewards.yml");
@@ -124,6 +127,53 @@ public class RewardConfig {
                 .filter(e -> e.getValue().enabled())
                 .map(e -> e.getKey().name().toLowerCase(Locale.ROOT))
                 .toList());
+    }
+
+    /**
+     * The AFK threshold this file was written for no longer means what it used to.
+     *
+     * <p>{@code min-participation-ratio} used to be measured against wall-clock match length with
+     * movement as the only signal, so {@code 0.25} was a plausible number. It is now measured
+     * against the seconds a player was actually in play, and rotation, client input and recent
+     * actions all count — which makes the old value a denial of everybody who defended a base
+     * instead of pushing. An admin who never touched it should not have to discover that; one who
+     * chose their own number keeps it.
+     */
+    private void backfill(File file) {
+        List<String> changes = new ArrayList<>();
+
+        String ratio = "rewards.eligibility.min-participation-ratio";
+        if (config.isSet(ratio) && Math.abs(config.getDouble(ratio) - 0.25) < 1e-9) {
+            config.set(ratio, 0.10);
+            config.setComments(ratio, List.of(
+                    "Share of the time a player was *in play* (not of the whole match) that they must",
+                    "have looked active for. Movement, rotation, any client input in the last 10s and",
+                    "anything they did in the last minute all count, so only an unattended body is",
+                    "below this."));
+            changes.add(ratio + ": 0.25 -> 0.1");
+        }
+
+        String floor = "rewards.eligibility.participation-scale-floor";
+        if (!config.isSet(floor)) {
+            config.set(floor, 0.5);
+            config.setComments(floor, List.of(
+                    "Above the threshold the participation grant scales by the ratio, but never below",
+                    "this floor - a quiet match is worth less, not worth nothing."));
+            changes.add("added " + floor + ": 0.5");
+        }
+
+        if (changes.isEmpty()) {
+            return;
+        }
+
+        try {
+            config.save(file);
+            changes.forEach(change -> plugin.getLogger().info("rewards.yml: " + change));
+        } catch (java.io.IOException exception) {
+            // The values are already live in memory; only the file is stale. Not worth failing the
+            // load over, but the admin should know why the file does not match what is running.
+            plugin.getLogger().warning("Could not update rewards.yml: " + exception.getMessage());
+        }
     }
 
     private RewardEntry parseEntry(Map<?, ?> raw) {
@@ -278,8 +328,20 @@ public class RewardConfig {
         return config.getInt("rewards.eligibility.min-players", 4);
     }
 
+    /**
+     * @return the share of their time in play a player must have looked active for. Low on purpose:
+     * the sampler credits rotation, client input and recent actions as well as movement, so anything
+     * above a floor like this is a body nobody is sitting behind rather than a quiet defender.
+     */
     public double minParticipationRatio() {
-        return config.getDouble("rewards.eligibility.min-participation-ratio", 0.25);
+        return config.getDouble("rewards.eligibility.min-participation-ratio", 0.10);
+    }
+
+    /**
+     * @return the smallest multiplier the participation grant may be scaled to
+     */
+    public double participationScaleFloor() {
+        return Math.min(1.0, Math.max(0.0, config.getDouble("rewards.eligibility.participation-scale-floor", 0.5)));
     }
 
     public boolean denyRageQuit() {
