@@ -6,8 +6,27 @@ magic:
         0: "&7Unleash the magical powers of &dSequence {sequence}&7!"
         1: "&7Your team is bound to a single &5Magic Pathway&7!"
         2: "&7Ascend from &eSequence 9 &7to &e0 &7throughout the match!"
+    material:
+      characteristic:
+        name: "&5Beyonder Characteristic &7- &dS{sequence}+"
+        lore: "&7A characteristic from a &drandom pathway&7, Sequence &e{sequence}&7 or weaker."
+      ingredient:
+        name: "&aBeyonder Ingredient &7- &dS{sequence}+"
+        lore: "&7An ingredient for &ayour own pathway&7, Sequence &e{sequence}&7 or weaker."
+      bound: "&8Match-bound - reclaimed when you leave."
+      received:
+        characteristic: "&5✦ &7You received a &dBeyonder characteristic&7."
+        ingredient: "&a✦ &7You received a &aBeyonder ingredient&7."
+      unavailable: "&cNothing could be prepared for you - nothing was taken."
+      no_magic: "&cMagic is disabled in this match."
+      no_pathway: "&cYou have no pathway yet."
+      wrong_pathway: "&cYour pathway cannot use crafting materials."
+      disabled: "&cCrafting materials are not available on this server."
+      limit_reached: "&cYou have already bought your &e{limit}&c materials this match."
   pathways:
     fool: "&5The Fool"
+  combat:
+    projectile_cooldown: "&7Ready again in &e{seconds}s&7."
   messages:
     try_again: "&d&lRNG GODS! &fI FEEL LUCKY! &7Drink me again!"
     advanced: "&aYou have acquired the &5{pathway} &apathway. Let it guide you to victory!"
@@ -15,6 +34,7 @@ magic:
     no_acting: "&cNot yet worthy. &7You must reach &e100% Acting &7before ascending!"
     death_penalty: "&c💀 &7Death cost you &c{amount} Acting&7."
     sequence_advanced: "&5✨ &d{player} &7ascended to &5Sequence {sequence} &7({pathway})!"
+    ingredient_harvested: "&a✦ &7You harvested a &aBeyonder ingredient &7from your kill."
   pathway_assigned:
     title: "&5✦ &d{pathway}"
     subtitle: "&7Kill for &fActing &8•&7 buy &dElixirs &7to ascend"
@@ -26,23 +46,32 @@ magic:
     victory: "&6✨ &eYour magic helped carry the team to victory!"
   voting:
     started: "&b🗳️ &eMagic Voting has begun!"
-    instructions: "&7Use &agreen&7/&cred &7dyes to cast your vote!"
-    yes_item: "&a✅ Enable Magic"
-    yes_description: "&7Vote to unleash &dArcane Powers &7in this match"
-    no_item: "&c❌ Disable Magic"
-    no_description: "&7Vote for a classic, &fNon-Magical &7match"
-    voted_yes: "&aYou voted &2YES &ato Magic!"
-    voted_no: "&cYou voted &4NO &cto Magic!"
-    status: "&e📊 Votes: &aYES {yes} &7| &cNO {no} &7| &fTotal: {total}"
-    no_votes_at_all: "&fNo votes cast. &dMagic &fis enabled by default."
-    magic_enabled: "&5✨ Magic is &aENABLED &5for this game!"
-    magic_disabled: "&c🚫 Magic is &4DISABLED &cfor this game!"
-    final_result: "&6🏆 Result: &aYES {yes} &7| &cNO {no}"
+    instructions: "&7Right-click a dye to cast your vote!"
+    option:
+      team:
+        name: "&a✅ Team Pathways"
+        description: "&7One pathway per &ateam &7- everyone shares it"
+      individual:
+        name: "&d🎲 Individual Pathways"
+        description: "&7A &ddifferent pathway &7for every player"
+      disabled:
+        name: "&c❌ No Magic"
+        description: "&7Vote for a classic, &fNon-Magical &7match"
+    voted:
+      team: "&aYou voted for &2TEAM &apathways!"
+      individual: "&dYou voted for &5INDIVIDUAL &dpathways!"
+      disabled: "&cYou voted &4AGAINST &cmagic!"
+    result:
+      team: "&5✨ Magic is &aON&5, one pathway per team!"
+      individual: "&5🎲 Magic is &dON&5, every player draws their own pathway!"
+      disabled: "&c🚫 Magic is &4DISABLED &cfor this game!"
+    status: "&e📊 Votes: &aTeam {team} &7| &dIndividual {individual} &7| &cOff {off} &7| &fTotal: {total}"
+    no_votes_at_all: "&fNo votes cast. &dThe default mode &fapplies."
+    final_result: "&6🏆 Result: &aTeam {team} &7| &dIndividual {individual} &7| &cOff {off}"
     participation: "&b📈 Participation: &f{voted} &7out of &f{total} &7players"
-    tie_breaker: "&e⚖️ 50/50 Tie! &7The Fates will decide randomly..."
     not_active: "&cVoting is currently inactive!"
     reminder_title: "&eVoting!"
-    reminder_subtitle: "&7Click on green or red dye!"
+    reminder_subtitle: "&7Pick a dye to choose the magic mode!"
     reminder_message: "&e⚡ Don't forget to vote for magic!"
   spectator:
     welcome: "&5=== &dMagic Spectator Mode &5==="
@@ -63,6 +92,16 @@ magic:
     target_set: "&7Now tracking &a{player}&7!"
     target_cleared: "&7Target cleared! &fAction bar acts as proximity radar."
   event:
+    countdown:
+      upcoming: "&d⚔ &7Next Bedwars event in &e~{minutes}m&7."
+      due_now: "&d⚔ &7A Bedwars event is &adue now&7 — watch chat."
+      population: "&7Players online: &f{online}&7/&e{needed} &7needed."
+      shortfall: "&e⚠ &7It may not start: &c{missing} more player(s) &7needed (&f{online}&7/&e{needed}&7)."
+      in_flight: "&a⚔ An event is being recruited right now — use &f/mb event join&a!"
+      disabled: "&7Scheduled Bedwars events are switched off."
+      not_here: "&7Bedwars events are not scheduled from this server."
+      help_next: "&e/bedwars next &7- when the next Bedwars event is due"
+      help_join: "&e/bedwars join &7- sign up for the event being advertised"
     arena_welcome: "&d⚔ &7You're in the match lobby — &a{arrived}&7/&e{expected} &7here. Hang tight."
     started: "&5⚔ &dThe Bedwars match has begun &7— &e{count} &7players in."
     seat_lost: "&cThat match filled up before you arrived — sending you home."

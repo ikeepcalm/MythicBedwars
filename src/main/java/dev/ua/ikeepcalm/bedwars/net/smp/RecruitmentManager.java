@@ -214,6 +214,66 @@ public class RecruitmentManager implements dev.ua.ikeepcalm.bedwars.net.EventPar
     }
 
     /**
+     * Everything a player-facing countdown needs to say, taken in one consistent snapshot.
+     *
+     * <p>A record rather than four getters because the answers have to agree with each other: a
+     * countdown that reads the remaining time, then the population a tick later, can report "due
+     * now, and enough players" for a window that has just been spent.
+     *
+     * @param enabled        whether the schedule runs at all
+     * @param eventInFlight  whether one is already being recruited, which makes the countdown moot
+     * @param millisUntilDue how long until the next attempt, {@code 0} when one is due now
+     * @param onlineEligible players online who would actually be asked
+     * @param requiredPlayers how many of them the schedule needs
+     */
+    public record ScheduleOutlook(boolean enabled, boolean eventInFlight, long millisUntilDue,
+                                  int onlineEligible, int requiredPlayers) {
+
+        /**
+         * @return whether the server is currently short of the players the schedule needs
+         */
+        public boolean shortfall() {
+            return onlineEligible < requiredPlayers;
+        }
+
+        /**
+         * @return how many more players are needed, never negative
+         */
+        public int missing() {
+            return Math.max(0, requiredPlayers - onlineEligible);
+        }
+
+        /**
+         * @return whole minutes until the next attempt, rounded up so a countdown never shows "0m"
+         * for a window that has not arrived
+         */
+        public long minutesUntilDue() {
+            return (millisUntilDue + 59_999L) / 60_000L;
+        }
+    }
+
+    /**
+     * @return the current state of the schedule, for {@code /mb event next} and the countdown
+     * broadcast
+     */
+    public ScheduleOutlook outlook() {
+        return new ScheduleOutlook(
+                plugin.getConfigManager().isEventScheduleEnabled(),
+                currentEventId != null,
+                journal.millisUntilDue(windowSeconds() * 1000L),
+                countEligiblePlayers(),
+                plugin.getConfigManager().getEventScheduleMinPlayers());
+    }
+
+    /**
+     * @return when the last offer went out, which is what identifies the window a countdown is
+     * counting down; changes exactly when a new window opens
+     */
+    public long windowStamp() {
+        return journal.lastOfferedAt();
+    }
+
+    /**
      * @return a one-line description of the schedule, for {@code /mb event status}
      */
     public String describeSchedule() {

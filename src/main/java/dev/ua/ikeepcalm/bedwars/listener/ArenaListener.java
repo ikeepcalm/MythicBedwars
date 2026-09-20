@@ -16,14 +16,18 @@ import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
 import dev.ua.ikeepcalm.coi.api.model.PathwayData;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
+import dev.ua.ikeepcalm.bedwars.domain.core.MaterialGrantService;
 import dev.ua.ikeepcalm.bedwars.domain.core.PathwayManager;
+import dev.ua.ikeepcalm.bedwars.domain.item.service.SandboxItems;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.inventory.ItemStack;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class ArenaListener implements Listener {
 
@@ -56,6 +60,13 @@ public class ArenaListener implements Listener {
 
             if (plugin.getVotingManager().isMagicEnabled(arena.getName())) {
                 MythicBedwars.getInstance().log("Magic is enabled for arena: " + arena.getName() + ", assigning pathways");
+
+                // Before any loadout opens: an arena frozen at noon otherwise disables every
+                // shadow-gated ability and hands Nocturnality's light penalty to whoever drew it.
+                if (plugin.getArenaEnvironmentService() != null) {
+                    plugin.getArenaEnvironmentService().apply(arena);
+                }
+
                 plugin.getArenaPathwayManager().assignPathwaysToTeams(arena);
 
                 for (Player player : arena.getPlayers()) {
@@ -83,6 +94,10 @@ public class ArenaListener implements Listener {
         }
 
         if (event.getNewStatus() == ArenaStatus.STOPPED) {
+            if (plugin.getArenaEnvironmentService() != null) {
+                plugin.getArenaEnvironmentService().clear(arena);
+            }
+
             Long startTime = arenaStartTimes.remove(arena.getName());
             if (startTime != null && plugin.getStatisticsManager() != null) {
                 long duration = System.currentTimeMillis() - startTime;
@@ -96,6 +111,11 @@ public class ArenaListener implements Listener {
     @EventHandler
     public void onArenaEnd(ArenaUnloadEvent event) {
         Arena arena = event.getArena();
+
+        if (plugin.getArenaEnvironmentService() != null) {
+            plugin.getArenaEnvironmentService().clear(arena);
+        }
+
         plugin.getArenaPathwayManager().cleanupArena(arena);
         plugin.getVotingManager().cleanupArena(arena.getName());
         arenaStartTimes.remove(arena.getName());
@@ -186,6 +206,19 @@ public class ArenaListener implements Listener {
             plugin.getVotingManager().removeVotingItems(player);
         }
 
+        // Characteristics and ingredients bought or dropped in here are real COI progression items,
+        // and this server transfers players home across a proxy. Leaving the arena is the boundary
+        // they must not cross, whatever the reason for leaving.
+        if (plugin.getProjectileCooldownListener() != null) {
+            plugin.getProjectileCooldownListener().clear(player);
+        }
+
+        int stripped = SandboxItems.strip(player);
+        if (stripped > 0) {
+            MythicBedwars.getInstance().log("Reclaimed {} match-issued item stack(s) from {} on leaving {}.",
+                    stripped, player.getName(), arena.getName());
+        }
+
         boolean isGameEnding = event.getReason() == KickReason.GAME_LOSE
                                || event.getReason() == KickReason.GAME_END
                                || event.getReason() == KickReason.ARENA_STOP;
@@ -227,6 +260,10 @@ public class ArenaListener implements Listener {
             }
         }
 
+        if (killer != null) {
+            grantCraftingDrop(killer, event.getPlayer(), event.isFatalDeath());
+        }
+
         // Acting penalty on regular death (fatal = eliminated, no penalty needed)
         if (!event.isFatalDeath()) {
             Player victim = event.getPlayer();
@@ -246,6 +283,67 @@ public class ArenaListener implements Listener {
                 }
             }
         }
+    }
+
+    /**
+     * Drops the killer a crafting ingredient, capped at the victim's own power.
+     *
+     * <p>Crafting pathways arrive in a Bedwars match with nothing to craft from, which is what
+     * makes them feel like a wasted draw. Tying the supply to kills rather than to time means the
+     * fix costs the same thing everything else in Bedwars costs.
+     *
+     * <p>The cap is the point of the rule: the ingredient may be no <i>stronger</i> than the
+     * Beyonder who died for it. Beware the inversion — COI sequence numbers run the other way, so
+     * "no stronger than the victim" is {@code sequence >= victimSequence}, and killing a Sequence 9
+     * yields only Sequence 9 material.
+     */
+    private void grantCraftingDrop(Player killer, Player victim, boolean finalKill) {
+        if (!plugin.getConfigManager().isCraftingKillDropEnabled()) {
+            return;
+        }
+
+        MaterialGrantService materials = plugin.getMaterialGrantService();
+        if (materials == null) {
+            return;
+        }
+
+        String pathway = plugin.getArenaPathwayManager().getPlayerPathway(killer);
+        if (pathway == null || !materials.isCraftingPathway(pathway)) {
+            return;
+        }
+
+        double chance = finalKill
+                ? plugin.getConfigManager().getCraftingFinalKillDropChance()
+                : plugin.getConfigManager().getCraftingKillDropChance();
+
+        if (chance <= 0.0 || ThreadLocalRandom.current().nextDouble() >= chance) {
+            return;
+        }
+
+        ItemStack ingredient = materials.rollIngredient(pathway, victimSequence(victim));
+        if (ingredient == null) {
+            return;
+        }
+
+        materials.give(killer, ingredient);
+        killer.sendMessage(plugin.getLocaleManager().formatMessage(killer, "magic.messages.ingredient_harvested"));
+    }
+
+    /**
+     * @return the victim's sequence, or {@code 9} when it cannot be read — the weakest tier, so an
+     * unreadable victim can never be worth more than a readable one
+     */
+    private int victimSequence(Player victim) {
+        if (victim == null) {
+            return 9;
+        }
+
+        BeyonderData data = circleOfImaginationAPI.getBeyonderData(victim);
+        if (data == null || data.pathways().isEmpty()) {
+            return 9;
+        }
+
+        return data.lowestSequence();
     }
 
     @EventHandler

@@ -68,6 +68,18 @@ network:
       min-players: 40
       # How promptly a due window is noticed once the players are there. Not how often events run.
       check-seconds: 120
+
+      # Telling players when the next attempt is due, and when it looks like it will not happen.
+      # Without this the schedule is invisible: events appear out of nowhere, and a server sitting
+      # one player under min-players has no way of learning that is why none have run.
+      countdown:
+        enabled: true
+        # Minutes-remaining marks at which to broadcast. Empty disables the broadcast, leaving
+        # /mb event next as the only way to ask.
+        broadcast-minutes: [ 60, 30, 10 ]
+        # How close the next attempt must be before a player shortfall is worth mentioning.
+        # Warning six hours out is noise; warning in the last hour is something players can act on.
+        shortfall-warn-minutes: 60
     # How long signups stay open once a host accepts.
     # Read by the MINIGAME role only: the host commits to holding its arena until this deadline and
     # sends it in its acceptance, so the SMP honours the host's value rather than its own.
@@ -99,6 +111,12 @@ network:
     event-ttl-seconds: 900
     # Event matches always run with magic on, bypassing the usual vote.
     force-magic: true
+    # Which magic mode an event match runs in, since it never holds a vote.
+    #   TEAM       - one pathway per team (the classic shape)
+    #   INDIVIDUAL - one pathway per player
+    #   RANDOM     - one of the two above, rolled once per event
+    # force-magic: false wins outright; this is only read when magic is on at all.
+    magic-mode: RANDOM
     # Whether spectators may watch an event match. With this off, a player who dies and chooses to
     # spectate is offered a ride home instead.
     allow-spectators: true
@@ -136,6 +154,23 @@ global:
 voting:
   # Enable voting system
   enabled: true
+
+  # The lobby picks between three magic modes:
+  #   TEAM       - one pathway per team, shared by everyone on it
+  #   INDIVIDUAL - one pathway per player, drawn distinctly across the whole arena
+  #   OFF        - ordinary Bedwars
+  #
+  # INDIVIDUAL exists because pathways are not equally suited to Bedwars: a team that draws a
+  # non-combat pathway is behind before the round starts. Spreading the draw over players means
+  # every team ends up holding a mix, so no team is carried by one unlucky roll.
+  #
+  # Whether INDIVIDUAL is offered on the ballot at all. With this off the vote is the original
+  # two-option one, and a default-mode of INDIVIDUAL falls back to TEAM.
+  individual-enabled: true
+  # Used when nobody votes, when voting is disabled, and as the tie-break floor.
+  # TEAM keeps an upgraded server playing exactly as it did before.
+  default-mode: TEAM
+
   # Delay in seconds before giving voting items to players
   item-delay: 3
   # Show reminders to vote
@@ -182,6 +217,21 @@ pathways:
   min-games-for-balance: 3
   # List of disabled pathways (pathway names)
   disabled: []
+  # Pathways whose whole point is making things (Paragon, Moon) arrive in a Bedwars match with
+  # nothing to make anything from: ingredients and characteristics normally come from mining nodes
+  # and foundables accumulated over days of survival play. These settings are the match's own
+  # supply of them.
+  crafting:
+    # Whether a kill yields a crafting ingredient of the killer's own pathway.
+    kill-drops: true
+    # Which pathways earn the drop. An EMPTY list means every pathway, which is deliberately not
+    # the default: this exists to fix pathways that cannot otherwise build anything, and giving it
+    # to combat pathways as well is a straight power increase.
+    pathways: [ paragon, moon ]
+    # Chance of a drop, 0.0 - 1.0.
+    kill-drop-chance: 0.7
+    final-kill-drop-chance: 1.0
+
   # List of blocked abilities (ability names)
   blocked-abilities:
     - "thread-hands"
@@ -194,6 +244,45 @@ pathways:
 # limits belong at the low end.
 shop:
   max-purchases: { }
+
+  # Beyonder crafting inputs, sold from the shop's Arcane Materials page.
+  #
+  # The special-item ids are magic_char_<0-9> and magic_ingredient_<0-9>, where the number is the
+  # STRONGEST sequence that tier may roll - remember COI's inversion, where a lower number is the
+  # stronger Beyonder. magic_ingredient_6 therefore rolls a Sequence 6, 7, 8 or 9 ingredient.
+  #
+  # A characteristic comes from a RANDOM pathway (for Paragon that is what decides the crafted
+  # artifact's abilities). An ingredient always comes from the BUYER'S OWN pathway, since an
+  # ingredient for somebody else's recipe is litter.
+  #
+  # Everything bought here is tagged and reclaimed when the player leaves the arena: these are real
+  # progression items and the match is played on a server players are transferred home from.
+  materials:
+    enabled: true
+    # Which pathways may buy. Empty means all of them.
+    pathways: [ ]
+    # How many a single player may buy in one match. -1 for no limit.
+    max-per-match: 8
+
+# Rate limits on the ordinary projectiles, so fireballs and bows cannot simply be held down.
+#
+# Deliberately keyed on the LAUNCHING ITEM, never on the projectile entity. Circle of Imagination
+# casts its abilities as plain snowballs, arrows and fireballs with nothing on them to distinguish
+# them, so a limit that watched the projectile would throttle Beyonder abilities too. Nothing here
+# can reach an ability: abilities keep their own COI cooldowns.
+combat:
+  projectile-cooldowns:
+    enabled: true
+    # Seconds between uses. Omit a key, or set it to 0, for no limit.
+    # Vanilla keys: bow, crossbow, egg, snowball, ender_pearl, splash_potion, lingering_potion
+    # MBedwars keys: any special-id exactly as shop.yml spells it (fireball, egg-bridger, tower...)
+    items:
+      bow: 1.5
+      crossbow: 2.0
+      fireball: 3.0
+      egg: 1.0
+      snowball: 0.5
+      ender_pearl: 5.0
 
 # Spectator features
 spectator:

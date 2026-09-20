@@ -1,9 +1,13 @@
 package dev.ua.ikeepcalm.bedwars.config;
 
+import dev.ua.ikeepcalm.bedwars.domain.voting.model.MagicMode;
+import dev.ua.ikeepcalm.bedwars.util.ConfigBackfiller;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class ConfigLoader {
 
@@ -21,7 +25,7 @@ public class ConfigLoader {
 
         // Writes anything this version added and clears out what it retired, so the file on disk is
         // the whole truth about what the plugin will do. A no-op once it has run.
-        for (String change : ConfigBackfill.apply(plugin, config)) {
+        for (String change : ConfigBackfiller.apply(plugin, config)) {
             plugin.getLogger().info("config.yml: " + change);
         }
     }
@@ -239,10 +243,86 @@ public class ConfigLoader {
     }
 
     /**
+     * @return whether the survival server announces the countdown to the next event attempt
+     */
+    public boolean isEventCountdownEnabled() {
+        return config.getBoolean("network.event.schedule.countdown.enabled", true);
+    }
+
+    /**
+     * Minute marks at which the countdown is broadcast.
+     *
+     * <p>Sorted descending and de-duplicated here rather than at each use: the announcer wants the
+     * largest mark it has reached, and an operator writing them in whatever order reads naturally
+     * should not change which one fires.
+     *
+     * @return the marks, largest first; empty switches the broadcast off
+     */
+    public List<Integer> getEventCountdownMarks() {
+        List<Integer> configured = config.getIntegerList("network.event.schedule.countdown.broadcast-minutes");
+
+        if (configured.isEmpty() && !config.isSet("network.event.schedule.countdown.broadcast-minutes")) {
+            return List.of(60, 30, 10);
+        }
+
+        return configured.stream()
+                .filter(minutes -> minutes > 0)
+                .distinct()
+                .sorted(Comparator.reverseOrder())
+                .toList();
+    }
+
+    /**
+     * @return how close the next attempt must be before a player shortfall is worth warning about.
+     * Warning about it six hours out is noise; warning about it in the last hour is actionable.
+     */
+    public int getEventCountdownWarnMinutes() {
+        return config.getInt("network.event.schedule.countdown.shortfall-warn-minutes", 60);
+    }
+
+    /**
      * @return whether event matches always run with magic on, bypassing the usual vote
      */
     public boolean isEventForceMagic() {
         return config.getBoolean("network.event.force-magic", true);
+    }
+
+    /**
+     * The value {@code network.event.magic-mode} takes to mean "pick one per event".
+     *
+     * <p>Not a {@link MagicMode} constant, because it is not a mode a round can be in — it is a
+     * policy for choosing one. Making it an enum constant would force every {@code switch} over
+     * the real modes to handle a case that can never reach them.
+     */
+    private static final String EVENT_MAGIC_MODE_RANDOM = "RANDOM";
+
+    /**
+     * The mode event matches run in, since they never hold a vote.
+     *
+     * <p>{@code force-magic: false} still wins outright — it is the switch an operator reaches for
+     * to run events without magic at all, and a mode set alongside it must not quietly turn it back
+     * on.
+     *
+     * <p><b>Rolls on every call when set to {@code RANDOM}.</b> Callers must resolve it once and
+     * carry the answer; an event that asked twice could accept as one mode and start as another.
+     * {@link dev.ua.ikeepcalm.bedwars.net.minigame.EventReservation} is where the host keeps it.
+     */
+    public MagicMode resolveEventMagicMode() {
+        if (!isEventForceMagic()) {
+            return MagicMode.OFF;
+        }
+
+        String raw = config.getString("network.event.magic-mode");
+
+        if (EVENT_MAGIC_MODE_RANDOM.equalsIgnoreCase(raw == null ? null : raw.trim())) {
+            // Between the two enabled modes only: RANDOM answers "which kind of magic", not
+            // "whether", which force-magic above has already settled.
+            return ThreadLocalRandom.current().nextBoolean() ? MagicMode.TEAM : MagicMode.INDIVIDUAL;
+        }
+
+        MagicMode configured = MagicMode.fromId(raw, getDefaultMagicMode());
+
+        return configured.isMagicEnabled() ? configured : MagicMode.TEAM;
     }
 
     /**
@@ -416,6 +496,85 @@ public class ConfigLoader {
         return config.getInt("shop.max-purchases.sequence-" + sequence, -1);
     }
 
+    /**
+     * @return whether the shop sells Beyonder crafting inputs at all
+     */
+    public boolean isShopMaterialsEnabled() {
+        return config.getBoolean("shop.materials.enabled", true);
+    }
+
+    /**
+     * @return the pathways allowed to buy crafting inputs; empty means all of them
+     */
+    public List<String> getMaterialShopPathways() {
+        return config.getStringList("shop.materials.pathways");
+    }
+
+    /**
+     * @return how many crafting inputs one player may buy in a match, or {@code -1} for no limit
+     */
+    public int getMaxMaterialPurchases() {
+        return config.getInt("shop.materials.max-per-match", 8);
+    }
+
+    /**
+     * The pathways whose players earn a crafting ingredient for a kill.
+     *
+     * <p>Defaults to the two the players actually named. An empty list means every pathway, which
+     * is deliberately <b>not</b> the default: the drop exists to fix pathways that cannot otherwise
+     * build anything, and handing it to combat pathways as well is a straight power increase.
+     */
+    public List<String> getCraftingPathways() {
+        if (!config.isSet("pathways.crafting.pathways")) {
+            return List.of("paragon", "moon");
+        }
+
+        return config.getStringList("pathways.crafting.pathways");
+    }
+
+    /**
+     * @return whether killing somebody drops a crafting ingredient for crafting pathways
+     */
+    public boolean isCraftingKillDropEnabled() {
+        return config.getBoolean("pathways.crafting.kill-drops", true);
+    }
+
+    /**
+     * @return the chance, 0.0 to 1.0, that an ordinary kill yields an ingredient
+     */
+    public double getCraftingKillDropChance() {
+        return clampChance(config.getDouble("pathways.crafting.kill-drop-chance", 1.0));
+    }
+
+    /**
+     * @return the chance for a final kill, which is worth more because it is harder and rarer
+     */
+    public double getCraftingFinalKillDropChance() {
+        return clampChance(config.getDouble("pathways.crafting.final-kill-drop-chance", 1.0));
+    }
+
+    private static double clampChance(double value) {
+        return Math.max(0.0, Math.min(1.0, value));
+    }
+
+    /**
+     * How long a player must wait between uses of one ordinary projectile.
+     *
+     * <p>Keyed by a short name — {@code bow}, {@code crossbow}, {@code egg}, {@code ender_pearl} —
+     * or, for an MBedwars special item, by its {@code special-id} exactly as {@code shop.yml}
+     * spells it, so {@code fireball} gates the shop's fireball.
+     *
+     * @return the cooldown in seconds; {@code 0} or less means no limit, which is the default for
+     * anything not named in config
+     */
+    public double getProjectileCooldownSeconds(String key) {
+        if (key == null || !config.getBoolean("combat.projectile-cooldowns.enabled", true)) {
+            return 0.0;
+        }
+
+        return config.getDouble("combat.projectile-cooldowns.items." + key, 0.0);
+    }
+
     public boolean isGloballyEnabled() {
         return config.getBoolean("global.enabled", true);
     }
@@ -470,6 +629,31 @@ public class ConfigLoader {
 
     public boolean isVotingEnabled() {
         return config.getBoolean("voting.enabled", true);
+    }
+
+    /**
+     * The mode used when nobody votes, when voting is switched off, and as the tie-break floor.
+     *
+     * <p>Defaults to {@link MagicMode#TEAM}: it is what every existing install has always done, and
+     * a config upgrade must not change how a server plays without anybody asking for it.
+     */
+    public MagicMode getDefaultMagicMode() {
+        MagicMode configured = MagicMode.fromId(config.getString("voting.default-mode"), MagicMode.TEAM);
+
+        // OFF is a legitimate thing to want here - an operator who wants magic opt-in rather than
+        // opt-out - so it is deliberately not corrected away.
+        if (configured == MagicMode.INDIVIDUAL && !isIndividualMagicModeEnabled()) {
+            return MagicMode.TEAM;
+        }
+
+        return configured;
+    }
+
+    /**
+     * @return whether the per-player pathway mode is offered on the ballot at all
+     */
+    public boolean isIndividualMagicModeEnabled() {
+        return config.getBoolean("voting.individual-enabled", true);
     }
 
     public int getVotingItemDelay() {

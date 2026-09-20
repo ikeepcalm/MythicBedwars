@@ -26,6 +26,17 @@ commands:
     # before the executor ran, and "/mb event join" is the relog-proof way to sign up once a chat
     # button has expired. CommandManager checks mythicbedwars.admin per subcommand instead.
     aliases: [mb, mbw]
+  bedwars:
+    # The player-facing command. Deliberately NOT permission-gated here, for the same reason as
+    # /mythicbedwars: Bukkit rejects the sender before the executor runs, and every branch of this
+    # one is meant for ordinary players. Each branch checks mythicbedwars.event.join itself.
+    #
+    # No aliases on purpose. MBedwars owns /bw and very likely lists "bedwars" among its own
+    # aliases; a primary name beats another plugin's alias in Bukkit's command map, but adding
+    # more labels here would only create more ways to lose that race. /mb event next and
+    # /mb event join remain as fallbacks, and /mythicbedwars:bedwars always resolves.
+    description: "When the next Bedwars event is, and how to sign up"
+    usage: "/bedwars [next|join]"
   mbspec:
     description: "MythicBedwars spectator commands"
     usage: "/mbspec <toggle|target|teams|inspect|settings>"

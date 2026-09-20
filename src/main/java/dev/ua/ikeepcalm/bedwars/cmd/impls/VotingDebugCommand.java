@@ -3,6 +3,7 @@ package dev.ua.ikeepcalm.bedwars.cmd.impls;
 import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
+import dev.ua.ikeepcalm.bedwars.domain.voting.model.MagicMode;
 import dev.ua.ikeepcalm.bedwars.domain.voting.model.VotingSession;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -37,7 +38,7 @@ public class VotingDebugCommand {
     private void sendUsage(CommandSender sender) {
         sender.sendMessage(Component.text("=== Voting Debug Commands ===", NamedTextColor.GOLD));
         sender.sendMessage(Component.text("/mb voting status - Show voting status for all arenas", NamedTextColor.YELLOW));
-        sender.sendMessage(Component.text("/mb voting force <arena> <enable/disable> - Force magic state", NamedTextColor.YELLOW));
+        sender.sendMessage(Component.text("/mb voting force <arena> <team|individual|off> - Force the round's magic mode", NamedTextColor.YELLOW));
         sender.sendMessage(Component.text("/mb voting test - Test voting in current arena", NamedTextColor.YELLOW));
         sender.sendMessage(Component.text("/mb voting clear <arena> - Clear voting data", NamedTextColor.YELLOW));
     }
@@ -52,31 +53,45 @@ public class VotingDebugCommand {
         for (Arena arena : BedwarsAPI.getGameAPI().getArenas()) {
             String arenaName = arena.getName();
             boolean hasVoting = plugin.getVotingManager().hasActiveVoting(arenaName);
-            boolean magicEnabled = plugin.getVotingManager().isMagicEnabled(arenaName);
+            MagicMode mode = plugin.getVotingManager().getMagicMode(arenaName);
             VotingSession session = plugin.getVotingManager().getVotingSession(arenaName);
 
             sender.sendMessage(Component.text("\n" + arenaName + ":", NamedTextColor.AQUA));
             sender.sendMessage(Component.text("  Status: " + arena.getStatus(), NamedTextColor.GRAY));
             sender.sendMessage(Component.text("  Active Voting: " + (hasVoting ? "YES" : "NO"),
                     hasVoting ? NamedTextColor.GREEN : NamedTextColor.GRAY));
-            sender.sendMessage(Component.text("  Magic Enabled: " + (magicEnabled ? "YES" : "NO"),
-                    magicEnabled ? NamedTextColor.GREEN : NamedTextColor.RED));
+            sender.sendMessage(Component.text("  Magic Mode: " + mode,
+                    mode.isMagicEnabled() ? NamedTextColor.GREEN : NamedTextColor.RED));
 
             if (session != null) {
-                sender.sendMessage(Component.text("  Yes Votes: " + session.getYesVotes(), NamedTextColor.GREEN));
-                sender.sendMessage(Component.text("  No Votes: " + session.getNoVotes(), NamedTextColor.RED));
+                sender.sendMessage(Component.text("  Team votes: " + session.countVotes(MagicMode.TEAM), NamedTextColor.GREEN));
+                sender.sendMessage(Component.text("  Individual votes: " + session.countVotes(MagicMode.INDIVIDUAL), NamedTextColor.LIGHT_PURPLE));
+                sender.sendMessage(Component.text("  Off votes: " + session.countVotes(MagicMode.OFF), NamedTextColor.RED));
             }
         }
     }
 
     private void handleForce(CommandSender sender, String[] args) {
         if (args.length < 4) {
-            sender.sendMessage(Component.text("Usage: /mb voting force <arena> <enable/disable>", NamedTextColor.RED));
+            sender.sendMessage(Component.text("Usage: /mb voting force <arena> <team|individual|off>", NamedTextColor.RED));
             return;
         }
 
         String arenaName = args[2];
-        boolean enable = args[3].equalsIgnoreCase("enable");
+
+        // "enable"/"disable" still work: they were the whole vocabulary before there was a third
+        // mode, and an admin's muscle memory should not start silently doing nothing.
+        MagicMode mode = switch (args[3].toLowerCase()) {
+            case "enable" -> MagicMode.TEAM;
+            case "disable" -> MagicMode.OFF;
+            default -> MagicMode.fromId(args[3], null);
+        };
+
+        if (mode == null) {
+            sender.sendMessage(Component.text("Unknown mode: " + args[3] + " (team, individual or off)",
+                    NamedTextColor.RED));
+            return;
+        }
 
         Arena arena = BedwarsAPI.getGameAPI().getArenaByName(arenaName);
         if (arena == null) {
@@ -85,10 +100,10 @@ public class VotingDebugCommand {
         }
 
         plugin.getVotingManager().cleanupArena(arenaName);
-        plugin.getVotingManager().setMagicEnabled(arenaName, enable);
+        plugin.getVotingManager().setMagicMode(arenaName, mode);
 
-        sender.sendMessage(Component.text("Force set magic to " + (enable ? "ENABLED" : "DISABLED") +
-                                          " for arena " + arenaName, enable ? NamedTextColor.GREEN : NamedTextColor.RED));
+        sender.sendMessage(Component.text("Force set magic mode " + mode + " for arena " + arenaName,
+                mode.isMagicEnabled() ? NamedTextColor.GREEN : NamedTextColor.RED));
     }
 
     private void handleTest(CommandSender sender) {
@@ -132,7 +147,7 @@ public class VotingDebugCommand {
         }
 
         if (args.length == 4 && "force".equals(args[1])) {
-            return List.of("enable", "disable");
+            return List.of("team", "individual", "off");
         }
 
         return List.of();

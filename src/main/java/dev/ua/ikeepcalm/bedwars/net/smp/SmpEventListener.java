@@ -1,6 +1,7 @@
 package dev.ua.ikeepcalm.bedwars.net.smp;
 
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
+import dev.ua.ikeepcalm.bedwars.domain.item.service.SandboxItems;
 import dev.ua.ikeepcalm.bedwars.domain.reward.RewardRedeemer;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -36,7 +37,27 @@ public class SmpEventListener implements Listener {
      */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onPlayerJoin(PlayerJoinEvent event) {
+        reclaimMatchItems(event.getPlayer());
+
         greeter.onJoin(event.getPlayer());
         redeemer.redeemOnJoin(event.getPlayer());
+    }
+
+    /**
+     * Second line of defence against match-issued crafting materials reaching real progression.
+     *
+     * <p>The Bedwars server already strips them as a player leaves the arena, and the two backends
+     * normally keep separate inventories, so this should never find anything. It exists because the
+     * two assumptions it rests on — that the strip ran, and that no inventory-sync plugin carries
+     * the Bedwars inventory home — are both things an operator can change without knowing that free
+     * Sequence 4 characteristics were the consequence.
+     */
+    private void reclaimMatchItems(org.bukkit.entity.Player player) {
+        int stripped = SandboxItems.strip(player);
+        if (stripped > 0) {
+            plugin.getLogger().warning("Removed " + stripped + " match-issued item stack(s) from "
+                                       + player.getName() + " on arrival. They should not have crossed "
+                                       + "the proxy — check for inventory syncing between backends.");
+        }
     }
 }

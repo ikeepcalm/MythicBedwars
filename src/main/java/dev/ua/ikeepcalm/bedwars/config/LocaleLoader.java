@@ -1,5 +1,6 @@
 package dev.ua.ikeepcalm.bedwars.config;
 
+import dev.ua.ikeepcalm.bedwars.util.LocaleBackfiller;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.command.CommandSender;
@@ -102,6 +103,17 @@ public class LocaleLoader {
 
         saveDefaultLocale("lang-en.yml");
         saveDefaultLocale("lang-uk.yml");
+
+        // Then merge in whatever this release added. Without this a server that has been running
+        // since an earlier version keeps a language file frozen at whatever shipped then: the new
+        // strings still resolve, through setDefaults below, but never appear anywhere the operator
+        // can read or translate them.
+        for (String bundled : List.of("lang-en.yml", "lang-uk.yml")) {
+            List<String> added = LocaleBackfiller.apply(plugin, bundled);
+            if (!added.isEmpty()) {
+                plugin.getLogger().info(LocaleBackfiller.describe(bundled, added));
+            }
+        }
 
         File[] localeFiles = langFolder.listFiles((dir, name) -> name.startsWith("lang-") && name.endsWith(".yml"));
         if (localeFiles != null) {

@@ -21,7 +21,7 @@ import java.util.UUID;
  * does not hold. Targeting the event pathway would quietly pay nothing; everything resolves against
  * their real primary pathway instead.
  */
-public final class RewardModel {
+public class RewardModel {
 
     private RewardModel() {
     }

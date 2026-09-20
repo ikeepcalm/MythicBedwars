@@ -6,8 +6,8 @@ import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.domain.stats.db.PathwayStats;
 
 import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -21,27 +21,32 @@ public class StatisticsManager {
         this.plugin = plugin;
     }
 
+    /**
+     * Credits the round to every pathway that actually played it.
+     *
+     * <p>Asks the pathway manager for outcomes rather than walking teams itself: in individual mode
+     * a team holds several pathways and a pathway may be held on several teams, so the team is no
+     * longer the unit the statistics are keyed on.
+     */
     public void recordGameEnd(Arena arena, Team winningTeam) {
-        Set<Team> allParticipatingTeams = plugin.getArenaPathwayManager().getAllParticipatingTeams(arena);
+        List<PathwayManager.PathwayOutcome> outcomes =
+                plugin.getArenaPathwayManager().getRoundOutcomes(arena, winningTeam);
 
-        if (allParticipatingTeams.isEmpty()) {
+        if (outcomes.isEmpty()) {
             return;
         }
 
         totalUniqueGames.incrementAndGet();
 
-        for (Team team : allParticipatingTeams) {
-            String pathway = plugin.getArenaPathwayManager().getTeamPathway(arena, team);
-            if (pathway != null) {
-                PathwayStats stats = pathwayStatistics.computeIfAbsent(pathway, k -> new PathwayStats());
+        for (PathwayManager.PathwayOutcome outcome : outcomes) {
+            PathwayStats stats = pathwayStatistics.computeIfAbsent(outcome.pathway(), k -> new PathwayStats());
 
-                if (team.equals(winningTeam)) {
-                    stats.wins++;
-                } else {
-                    stats.losses++;
-                }
-                stats.totalGames++;
+            if (outcome.won()) {
+                stats.wins++;
+            } else {
+                stats.losses++;
             }
+            stats.totalGames++;
         }
     }
 
@@ -50,19 +55,24 @@ public class StatisticsManager {
         stats.sequencesReached.add(sequence);
     }
 
+    /**
+     * Records the round's length once, against the first pathway that played it.
+     *
+     * <p>The duration is a property of the round, not of a pathway, and the original deliberately
+     * broke after one entry rather than counting the same match once per team. That stays true in
+     * individual mode - which is why this reads the outcome list rather than the team set.
+     */
     public void recordGameDuration(Arena arena, long durationMillis) {
-        Set<Team> allParticipatingTeams = plugin.getArenaPathwayManager().getAllParticipatingTeams(arena);
+        List<PathwayManager.PathwayOutcome> outcomes =
+                plugin.getArenaPathwayManager().getRoundOutcomes(arena, null);
 
-        if (!allParticipatingTeams.isEmpty()) {
-            for (Team team : allParticipatingTeams) {
-                String pathway = plugin.getArenaPathwayManager().getTeamPathway(arena, team);
-                if (pathway != null) {
-                    PathwayStats stats = pathwayStatistics.computeIfAbsent(pathway, k -> new PathwayStats());
-                    stats.gameDurations.add(durationMillis);
-                    break;
-                }
-            }
+        if (outcomes.isEmpty()) {
+            return;
         }
+
+        PathwayStats stats = pathwayStatistics.computeIfAbsent(
+                outcomes.getFirst().pathway(), k -> new PathwayStats());
+        stats.gameDurations.add(durationMillis);
     }
 
     public void recordDamageDealt(String pathway, double damage) {

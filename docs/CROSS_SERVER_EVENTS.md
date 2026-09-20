@@ -142,6 +142,7 @@ what is still restart-only.
 `min-players`, `max-players`, `signup-seconds`, `arrival-grace-seconds`, `fill-window-seconds`,
 `lobby-hold-seconds`, `start-countdown-seconds`, `min-arrivals`, `auto-return-seconds`,
 `winner-return-delay-seconds`, `cooldown-minutes`, `event-ttl-seconds`, `force-magic`,
+`magic-mode`,
 `preferred-team-count`, the arena filters, `allow-spectators`, `announce-locally`,
 the whole of `schedule:`, `reap-interval-seconds`, `sync-interval-seconds`,
 `propose-timeout-seconds`, `statistics.save-interval-seconds`, and the two target Velocity names.
@@ -176,10 +177,27 @@ subcommand except `event join` checks `mythicbedwars.admin` itself.
 | `/mb event start` | SMP | Offers an event now, ignoring the quiet period. Nothing is announced to players until a host accepts. |
 | `/mb event cancel` | both | Calls off the event / releases held arenas |
 | `/mb event join` | SMP | Sign up (relog-proof alternative to clicking `[ JOIN NOW ]`) |
+| `/mb event next` | SMP | When the next attempt is due, and whether the server has the players for it |
 | `/mb event send <player> <smp\|minigame\|server>` | both | Proxy transfer smoke test. Also accepts a literal Velocity server name. |
 
-Permissions: `mythicbedwars.event.join` (default true), `mythicbedwars.event.exempt` (default
-false — holders never see event broadcasts).
+Permissions: `mythicbedwars.event.join` (default true, and what `/mb event next` checks too),
+`mythicbedwars.event.exempt` (default false — holders never see event broadcasts, and are not
+counted towards `schedule.min-players`, since they will never be asked).
+
+### The countdown
+
+`network.event.schedule.countdown` is what makes the schedule visible to players. Before it, the
+only way to ask when the next event was due was an admin command, so events appeared out of
+nowhere and a server sitting one player below `schedule.min-players` had no way of learning that
+was why none had run all evening.
+
+It broadcasts at each `broadcast-minutes` mark — once per window, largest reached mark first, so a
+server that was empty across several marks announces the closest one rather than working through
+the backlog. Inside `shortfall-warn-minutes` of the window, a broadcast that finds the server short
+of players says how many more are needed. Nothing is announced while a drive is already being
+recruited: the recruitment announcer is talking to the same people.
+
+Set `broadcast-minutes: []` to keep `/mb event next` and drop the broadcast.
 
 ---
 

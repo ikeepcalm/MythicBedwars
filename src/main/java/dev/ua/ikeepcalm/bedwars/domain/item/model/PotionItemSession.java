@@ -1,4 +1,4 @@
-package dev.ua.ikeepcalm.bedwars.domain.item;
+package dev.ua.ikeepcalm.bedwars.domain.item.model;
 
 import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
@@ -42,20 +42,31 @@ public class PotionItemSession extends SpecialItemUseSession {
         if (team == null) return;
 
         PathwayManager manager = MythicBedwars.getInstance().getArenaPathwayManager();
-        String teamPathway = manager.getTeamPathway(arena, team);
 
-        if (teamPathway == null) {
-            stop();
-            return;
-        }
-
+        // The loadout first, then the pathway. In individual mode the draw is only made when a
+        // player's loadout opens, so asking what they were assigned before that has ever happened
+        // answers "nothing" - and checking it first would turn the recovery below into a dead
+        // branch for exactly the players who need it.
         PathwayManager.PlayerMagicData data = manager.getPlayerData(player);
 
         if (data == null) {
             manager.initializePlayerMagic(player, arena, team);
             data = manager.getPlayerData(player);
+
+            if (data == null) {
+                stop();
+                return;
+            }
+
             player.sendMessage(MythicBedwars.getInstance().getLocaleManager().formatMessage("magic.messages.advanced", "pathway", String.valueOf(data.getPathway())));
             takeItem();
+            stop();
+            return;
+        }
+
+        String teamPathway = manager.getExpectedPathway(arena, team, player);
+
+        if (teamPathway == null) {
             stop();
             return;
         }

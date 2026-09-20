@@ -42,6 +42,14 @@ public class CommandManager implements CommandExecutor, TabCompleter {
     }
 
     /**
+     * @return the shared event branch, so the player-facing {@code /bedwars} can delegate to the
+     * same instance rather than standing up a second one
+     */
+    public EventCommand eventCommand() {
+        return event;
+    }
+
+    /**
      * Enables the MBedwars-backed subcommands. Called only from the minigame role's bootstrap.
      */
     public void installMinigameSubcommands(MinigameSubcommands minigame) {
@@ -51,7 +59,7 @@ public class CommandManager implements CommandExecutor, TabCompleter {
     @Override
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label, String[] args) {
         if (args.length == 0) {
-            if (!requireAdmin(sender)) {
+            if (doesNotRequireAdmin(sender)) {
                 return true;
             }
             sendHelpMessage(sender);
@@ -67,7 +75,7 @@ public class CommandManager implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        if (!requireAdmin(sender)) {
+        if (doesNotRequireAdmin(sender)) {
             return true;
         }
 
@@ -88,13 +96,13 @@ public class CommandManager implements CommandExecutor, TabCompleter {
         return true;
     }
 
-    private boolean requireAdmin(CommandSender sender) {
+    private boolean doesNotRequireAdmin(CommandSender sender) {
         if (sender.hasPermission(Subcommands.ADMIN_PERMISSION)) {
-            return true;
+            return false;
         }
 
         sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.no_permission"));
-        return false;
+        return true;
     }
 
     private void handleToggle(CommandSender sender) {

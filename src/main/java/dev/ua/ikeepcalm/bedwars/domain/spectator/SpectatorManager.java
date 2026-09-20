@@ -121,7 +121,7 @@ public class SpectatorManager {
     private void showTeamPathways(Player player, Arena arena) {
         Map<Team, String> teamPathways = new HashMap<>();
         for (Team team : arena.getAliveTeams()) {
-            String pathway = plugin.getArenaPathwayManager().getTeamPathway(arena, team);
+            String pathway = plugin.getArenaPathwayManager().getTeamPathwayDisplay(arena, team);
             if (pathway != null) {
                 teamPathways.put(team, pathway);
             }
@@ -187,7 +187,7 @@ public class SpectatorManager {
         int teamIndex = (int) ((System.currentTimeMillis() / 5000) % teams.size());
         Team currentTeam = teams.get(teamIndex);
 
-        String pathway = plugin.getArenaPathwayManager().getTeamPathway(arena, currentTeam);
+        String pathway = plugin.getArenaPathwayManager().getTeamPathwayDisplay(arena, currentTeam);
         if (pathway == null) return;
 
         List<Player> teamPlayers = arena.getPlayers().stream()
@@ -244,7 +244,10 @@ public class SpectatorManager {
 
     private Component createPlayerStatusComponent(Player player, Arena arena) {
         Team team = arena.getPlayerTeam(player);
-        String pathway = team != null ? plugin.getArenaPathwayManager().getTeamPathway(arena, team) : "Unknown";
+        String pathway = plugin.getArenaPathwayManager().getPlayerPathway(player);
+        if (pathway == null) {
+            pathway = "Unknown";
+        }
 
         BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(player);
 
@@ -273,7 +276,7 @@ public class SpectatorManager {
         if (arena == null) return;
 
         Team team = arena.getPlayerTeam(target);
-        String pathway = team != null ? plugin.getArenaPathwayManager().getTeamPathway(arena, team) : null;
+        String pathway = plugin.getArenaPathwayManager().getPlayerPathway(target);
 
         spectator.sendMessage(plugin.getLocaleManager().formatMessage("magic.spectator.player_status", "player", target.getName()));
 

@@ -41,7 +41,7 @@ dependencies {
     compileOnly "redis.clients:jedis:${jedisVersion}"
     compileOnly "org.apache.commons:commons-pool2:${commonsPoolVersion}"
     compileOnly "org.xerial:sqlite-jdbc:${sqliteVersion}"
-    compileOnly 'dev.ua.ikeepcalm:circle-of-imagination-api:1.4.8-SNAPSHOT'
+    compileOnly 'dev.ua.ikeepcalm:circle-of-imagination-api:1.4.9-SNAPSHOT'
 }
 
 tasks {

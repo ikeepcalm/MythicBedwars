@@ -1,5 +1,7 @@
 package dev.ua.ikeepcalm.bedwars.net.minigame;
 
+import dev.ua.ikeepcalm.bedwars.domain.voting.model.MagicMode;
+
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -39,14 +41,31 @@ public class EventReservation {
      */
     private volatile boolean starting;
 
+    /**
+     * The magic mode this event runs in, settled once when the arena is reserved.
+     *
+     * <p>Held here rather than re-read from config at each of the three points that seed the vote
+     * result, because {@code network.event.magic-mode: RANDOM} rolls on every read — asking it
+     * three times would let an event accept as one mode, reassign as another and start as a third.
+     */
+    private final MagicMode magicMode;
+
     public EventReservation(String eventId, String arenaName, String smpServerId, String smpServerName,
-                            int originalMinPlayers, long signupDeadline) {
+                            int originalMinPlayers, long signupDeadline, MagicMode magicMode) {
         this.eventId = eventId;
         this.arenaName = arenaName;
         this.smpServerId = smpServerId;
         this.smpServerName = smpServerName;
         this.originalMinPlayers = originalMinPlayers;
         this.signupDeadline = signupDeadline;
+        this.magicMode = magicMode;
+    }
+
+    /**
+     * @return the mode this event was reserved to run in
+     */
+    public MagicMode magicMode() {
+        return magicMode;
     }
 
     public String eventId() {

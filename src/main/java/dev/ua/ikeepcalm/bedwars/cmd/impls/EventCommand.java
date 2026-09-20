@@ -24,12 +24,13 @@ import java.util.stream.Stream;
  */
 public class EventCommand {
 
-    public static final List<String> SUBCOMMANDS = List.of("status", "join", "preview", "start", "cancel", "send");
+    public static final List<String> SUBCOMMANDS =
+            List.of("status", "next", "join", "preview", "start", "cancel", "send");
 
     /**
-     * The one subcommand a player without admin may use.
+     * The subcommands a player without admin may use.
      */
-    private static final List<String> PLAYER_SUBCOMMANDS = List.of("join");
+    private static final List<String> PLAYER_SUBCOMMANDS = List.of("join", "next");
 
     private final MythicBedwars plugin;
 
@@ -48,14 +49,15 @@ public class EventCommand {
 
         String subcommand = args[1].toLowerCase();
 
-        // join carries its own permission; everything else is administrative.
-        if (!"join".equals(subcommand) && !sender.hasPermission("mythicbedwars.admin")) {
+        // join and next carry their own permission; everything else is administrative.
+        if (!PLAYER_SUBCOMMANDS.contains(subcommand) && !sender.hasPermission("mythicbedwars.admin")) {
             sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.no_permission"));
             return;
         }
 
         switch (subcommand) {
             case "status" -> handleStatus(sender);
+            case "next" -> handleNext(sender);
             case "join" -> handleJoin(sender);
             case "preview" -> handlePreview(sender);
             case "start" -> handleStart(sender);
@@ -67,6 +69,8 @@ public class EventCommand {
 
     public void sendHelp(CommandSender sender) {
         sender.sendMessage(Component.text("/mb event join - Sign up for the event being advertised",
+                NamedTextColor.YELLOW));
+        sender.sendMessage(Component.text("/mb event next - When the next event is due",
                 NamedTextColor.YELLOW));
 
         if (!sender.hasPermission("mythicbedwars.admin")) {
@@ -115,10 +119,38 @@ public class EventCommand {
     }
 
     /**
+     * When the next attempt is due, and whether the server currently has the players for it.
+     *
+     * <p>Player-facing on purpose. The schedule already knew both answers; until this existed the
+     * only way to ask was an admin command, so events appeared out of nowhere and a server sitting
+     * one player below the threshold had no way of finding that out.
+     */
+    public void handleNext(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            // Console gets the admin one-liner instead; it has no locale and nothing to plan around.
+            handleStatus(sender);
+            return;
+        }
+
+        if (!player.hasPermission("mythicbedwars.event.join")) {
+            player.sendMessage(plugin.getLocaleManager().formatMessage(player, "magic.commands.no_permission"));
+            return;
+        }
+
+        if (plugin.getScheduleAnnouncer() == null) {
+            player.sendMessage(plugin.getLocaleManager()
+                    .formatMessage(player, "magic.event.countdown.not_here"));
+            return;
+        }
+
+        plugin.getScheduleAnnouncer().describeFor(player).forEach(player::sendMessage);
+    }
+
+    /**
      * The relog-proof way in: chat click callbacks die with the connection that rendered them, so a
      * player who reconnects mid-drive still needs a way to sign up.
      */
-    private void handleJoin(CommandSender sender) {
+    public void handleJoin(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(plugin.getLocaleManager().formatMessage("magic.commands.player_only"));
             return;

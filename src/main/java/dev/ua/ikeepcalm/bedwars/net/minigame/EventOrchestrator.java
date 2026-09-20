@@ -5,6 +5,7 @@ import de.marcely.bedwars.api.arena.Arena;
 import de.marcely.bedwars.api.arena.ArenaStatus;
 import de.marcely.bedwars.api.arena.KickReason;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
+import dev.ua.ikeepcalm.bedwars.domain.voting.model.MagicMode;
 import dev.ua.ikeepcalm.bedwars.config.NetworkRole;
 import dev.ua.ikeepcalm.bedwars.net.EventParticipant;
 import dev.ua.ikeepcalm.bedwars.net.NetworkService;
@@ -276,15 +277,19 @@ public class EventOrchestrator implements EventParticipant {
             return;
         }
 
+        // Rolled exactly once, here, and carried on the reservation: with magic-mode: RANDOM every
+        // read is a fresh roll, and this value is seeded into the vote result three times over the
+        // event's life.
+        MagicMode magicMode = plugin.getConfigManager().resolveEventMagicMode();
+
         EventReservation reservation = new EventReservation(
                 eventId, arena.getName(), propose.smpServerId(), propose.smpServerName(),
-                arena.getMinPlayers(), signupDeadline);
+                arena.getMinPlayers(), signupDeadline, magicMode);
         reservationsByArena.put(arena.getName(), reservation);
 
         // Pre-seed the vote result: an event match always has magic on, and no VotingSession is ever
         // created for this arena (see MythicBedwars#isEventArena), so nothing can overwrite it.
-        plugin.getVotingManager().setMagicEnabled(arena.getName(),
-                plugin.getConfigManager().isEventForceMagic());
+        plugin.getVotingManager().setMagicMode(arena.getName(), magicMode);
 
         network.bus().send(NetworkRole.SMP, MessageType.EVENT_ACCEPT, eventId, propose.smpServerId(),
                 new Payloads.Accept(network.serverId(), plugin.getConfigManager().getThisVelocityServer(),
@@ -453,8 +458,7 @@ public class EventOrchestrator implements EventParticipant {
 
         reservation.reassign(to.getName(), to.getMinPlayers());
         reservationsByArena.put(to.getName(), reservation);
-        plugin.getVotingManager().setMagicEnabled(to.getName(),
-                plugin.getConfigManager().isEventForceMagic());
+        plugin.getVotingManager().setMagicMode(to.getName(), reservation.magicMode());
     }
 
     /**
@@ -649,8 +653,7 @@ public class EventOrchestrator implements EventParticipant {
         reservation.markStarting();
         stopHoldTask(reservation.arenaName());
 
-        plugin.getVotingManager().setMagicEnabled(arena.getName(),
-                plugin.getConfigManager().isEventForceMagic());
+        plugin.getVotingManager().setMagicMode(arena.getName(), reservation.magicMode());
 
         applyMinPlayers(arena, arena.getPlayers().size());
 

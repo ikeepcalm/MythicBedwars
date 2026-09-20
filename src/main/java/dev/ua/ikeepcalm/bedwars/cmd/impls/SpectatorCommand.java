@@ -136,7 +136,7 @@ public class SpectatorCommand implements CommandExecutor, TabCompleter {
         player.sendMessage(Component.text("=== Team Overview ===", NamedTextColor.GOLD));
 
         for (var team : arena.getAliveTeams()) {
-            String pathway = plugin.getArenaPathwayManager().getTeamPathway(arena, team);
+            String pathway = plugin.getArenaPathwayManager().getTeamPathwayDisplay(arena, team);
             if (pathway == null) continue;
 
             Component teamHeader = Component.text("▶ " + team.getDisplayName(), getTeamColor(team.getDisplayName()))

@@ -63,6 +63,7 @@ MythicBedwars
 ├── cmd/
 │   ├── impls/
 │   │   ├── EventCommand.java        # /mb event ... (both roles)
+│   │   ├── PlayerCommand.java       # /bedwars - the player-facing half (both roles)
 │   │   ├── MinigameSubcommands.java # stats/arena/balance/pathways/voting - MBedwars-facing
 │   │   ├── SpectatorCommand.java    # spectator HUD and targeting
 │   │   ├── UnavailableCommand.java  # stub bound to minigame-only commands in the SMP role
@@ -71,13 +72,16 @@ MythicBedwars
 │   └── Subcommands.java             # role-neutral subcommand names and permission nodes
 ├── config/
 │   ├── ConfigBackfill.java          # writes new keys into config.yml, removes retired ones
+│   ├── LocaleBackfill.java          # merges new keys into the operator's lang-*.yml
 │   ├── ConfigLoader.java            # one getter per key, inline defaults
 │   ├── LocaleLoader.java            # EN + UK, resolved per recipient
 │   └── NetworkRole.java             # SMP | MINIGAME
 ├── domain/
 │   ├── balancer/PathwayBalancer.java
-│   ├── core/                        # PathwayManager, ShopManager, StatisticsManager
-│   ├── item/                        # PotionItemSession, PotionShopItem
+│   ├── core/                        # PathwayManager, ShopManager, StatisticsManager,
+│   │                                #   MaterialGrantService, ArenaEnvironmentService
+│   ├── item/                        # PotionItemSession, PotionShopItem,
+│   │                                #   MaterialShopItem, MaterialKind, SandboxItems
 │   ├── reward/                      # the cross-server reward pipeline
 │   │   ├── model/RewardModel.java   # kinds, tiers, entries, grants, bundles
 │   │   ├── CoiCapabilities.java     # what the loaded COI can actually do
@@ -90,9 +94,10 @@ MythicBedwars
 │   ├── runnable/                    # ActingProgressionTask, PathwayVerificationTask, VotingReminderTask
 │   ├── spectator/SpectatorManager.java
 │   ├── stats/db/                    # SQLiteDatabase, DatabaseMigration, PathwayStats
-│   └── voting/                      # VotingSession, VotingManager
+│   └── voting/                      # MagicMode, VotingSession, VotingManager
 ├── integration/PlanDataExtension.java   # loaded reflectively; Plan is optional
-├── listener/                        # Arena, Damage, Player, Spectator, Voting, ServerShutdown
+├── listener/                        # Arena, Damage, Player, Spectator, Voting, ServerShutdown,
+│                                    #   ProjectileCooldown
 ├── net/
 │   ├── EventParticipant.java        # the local half of an event, role-neutrally
 │   ├── EventReaperTask.java         # sweeps events that stopped progressing
@@ -104,7 +109,8 @@ MythicBedwars
 │   │                                #   guard, listener, lobby hold, return service
 │   ├── protocol/                    # Envelope, Heartbeat, payloads, enums
 │   ├── smp/                         # recruit side: manager, announcer, signups, listener,
-│   │                                #   ReturnGreeter, ScheduleJournal (schedule.yml)
+│   │                                #   ReturnGreeter, ScheduleJournal (schedule.yml),
+│   │                                #   ScheduleAnnouncer (the player-facing countdown)
 │   ├── transport/                   # RedisClient/JedisRedisClient, RedisBus, RedisKeys, LuaScripts
 │   └── velocity/ServerTransferService.java
 └── MythicBedwars.java               # onEnable/onDisable, role split
@@ -127,6 +133,7 @@ is checked per subcommand.
 | Subcommand | Role | Permission |
 |---|---|---|
 | `event join` | SMP | `mythicbedwars.event.join` (default true) |
+| `event next` | SMP | `mythicbedwars.event.join` (default true) |
 | `event status` | both | admin |
 | `event preview` | SMP | admin |
 | `event start` | SMP | admin |
@@ -138,12 +145,58 @@ is checked per subcommand.
 
 `mythicbedwars.event.exempt` (default false) opts the holder out of recruitment broadcasts.
 
+### `/bedwars`
+
+The player-facing command; `/mythicbedwars` stays the admin tool. Role-neutral, registered on both
+backends, and not permission-gated at the command level for the same reason as `/mb`. Bare
+`/bedwars` answers the common question (when is the next one) and points at `join`.
+
+| Subcommand | Role | Permission |
+|---|---|---|
+| *(none)* / `next` / `when` | SMP | `mythicbedwars.event.join` (default true) |
+| `join` | SMP | `mythicbedwars.event.join` (default true) |
+
+Declared with **no aliases on purpose**: MBedwars owns `/bw` and very likely lists `bedwars` among
+its own aliases. A primary command name beats another plugin's alias in Bukkit's command map, so
+`/bedwars` should win — but `/mb event next`, `/mb event join` and `/mythicbedwars:bedwars` remain
+as fallbacks if it ever does not.
+
 ### `/mbspec` (`/mbspectator`, `/mythicspec`)
 
 `mythicbedwars.spectator`. Bound to a stub in the SMP role.
 
 `toggle <hud|actionbar|detailed>` · `target [player]` · `teams` · `inspect <player>` · `settings`.
 Right-clicking a player while spectating opens their inspect overview.
+
+---
+
+## 🔮 Magic modes
+
+The lobby vote is a **three-way** `MagicMode`, not a boolean:
+
+| Mode | Pathways |
+|---|---|
+| `TEAM` | one per team, shared — the original behaviour and the default |
+| `INDIVIDUAL` | one per player, drawn distinctly across the whole arena |
+| `OFF` | ordinary Bedwars |
+
+`INDIVIDUAL` exists because pathways are not equally suited to Bedwars, so a team that drew a
+non-combat one was behind before the round started. Spreading the draw over players leaves every
+team holding a mix.
+
+Consequences worth knowing:
+
+- **Ask the player, not the team.** `PathwayManager#getPlayerPathway` is what nearly every caller
+  wants. `getTeamPathway` is only correct in `TEAM` mode; `getTeamPathwayDisplay` is the spectator
+  view, and lists several pathways per team in `INDIVIDUAL` mode.
+- **`getExpectedPathway` is deliberately not `getPlayerPathway`.** The verification task compares
+  the two, so reading the expected value out of the player's own state would make the comparison
+  tautological.
+- **Statistics go through `getRoundOutcomes`,** not through teams: in `INDIVIDUAL` mode a team
+  holds several pathways and a pathway may sit on several teams.
+- **Individual draws are lazy,** made as each loadout opens, because a player's team is not settled
+  until MBedwars' auto-balancer has run — and the draw records the team it was made for, so an
+  eliminated player still counts at `RoundEndEvent`.
 
 ---
 
@@ -190,3 +243,17 @@ Right-clicking a player while spectating opens their inspect overview.
 - **`RoundEndEvent` reports every collection as empty on a tie.** That is the documented contract.
 - **`Arena#setLobbyTimeRemaining` returns a boolean and does nothing below the arena's own
   `minPlayers`.** Check it.
+- **`off`, `on`, `yes` and `no` are booleans in YAML 1.1**, including as *keys* — an unquoted
+  `off:` parses as `false` and every lookup under it misses silently. `MagicMode#key` therefore
+  maps `OFF` to `disabled` rather than relying on quotes, which `LocaleBackfiller` would have to
+  re-emit correctly on every rewrite. Pick a non-boolean word for any new key.
+- **A new lang key needs nothing extra to *work*** — `LocaleLoader` calls `setDefaults` with the
+  bundled file — **but it needs `LocaleBackfiller` to be *visible***. That runs automatically over
+  `lang-en.yml` and `lang-uk.yml`; nothing is needed per key.
+- **COI casts ability projectiles as plain `Snowball`/`Arrow`/`SmallFireball` with no shared
+  marker.** `ProjectileCooldownListener` therefore gates on the *launching item* — a real bow, an
+  MBedwars special id, a throwable held in hand — and never on the projectile entity. Inspecting
+  the entity would throttle abilities too.
+- **`network.event.magic-mode: RANDOM` rolls on every read.** `ConfigLoader.resolveEventMagicMode`
+  is named for it; the host resolves it once and carries the answer on `EventReservation`, because
+  the value is seeded into the vote result at three points in an event's life.

@@ -1,40 +1,68 @@
 package dev.ua.ikeepcalm.bedwars.domain.voting.service;
 
+import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
+import dev.ua.ikeepcalm.bedwars.domain.voting.model.MagicMode;
 import dev.ua.ikeepcalm.bedwars.domain.voting.model.VotingSession;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class VotingManager {
 
+    /**
+     * Stamped on each ballot item so the click handler reads the vote off the item itself.
+     *
+     * <p>The old handler inferred the vote from the item's material, which only worked while there
+     * were exactly two of them and no other dye could reach a lobby hotbar. Three options make that
+     * guess both longer and wronger; the item says what it is instead.
+     */
+    private static final String BALLOT_KEY = "vote_mode";
+
+    /**
+     * Hotbar slots the ballot occupies, laid out around the centre so a two-option and a
+     * three-option ballot both read as deliberate rather than left-aligned.
+     */
+    private static final int[] SLOTS_THREE = {2, 4, 6};
+    private static final int[] SLOTS_TWO = {3, 5};
+
     private final MythicBedwars plugin;
+    private final NamespacedKey ballotKey;
     private final Map<String, VotingSession> arenaSessions = new ConcurrentHashMap<>();
-    private final Map<String, Boolean> votingResults = new ConcurrentHashMap<>();
+    private final Map<String, MagicMode> votingResults = new ConcurrentHashMap<>();
 
     public VotingManager(MythicBedwars plugin) {
         this.plugin = plugin;
+        this.ballotKey = new NamespacedKey(plugin, BALLOT_KEY);
     }
 
     public void startVoting(Arena arena) {
         // Defence in depth: an event arena must never get a session, because endVoting() would then
         // overwrite the pre-seeded result and could turn magic off mid-event.
         if (plugin.isEventArena(arena.getName())) {
-            // Seed the configured value, not a hardcoded true. Hardcoding it would silently turn
-            // magic on for an operator who runs events with force-magic off.
-            boolean forced = plugin.getConfigManager().isEventForceMagic();
-            votingResults.put(arena.getName(), forced);
-            MythicBedwars.getInstance().log("Voting bypassed for event arena {} (magic {}).",
-                    arena.getName(), forced ? "on" : "off");
+            // Keep whatever the orchestrator already seeded when it reserved the arena. Re-reading
+            // the config here would resolve magic-mode: RANDOM a second time and could start the
+            // match in a different mode from the one the event was accepted as.
+            MagicMode forced = votingResults.computeIfAbsent(arena.getName(),
+                    // No seed only when the host never reserved this arena itself - a recovered or
+                    // hand-forced event. Resolving now is then the only answer available.
+                    name -> plugin.getConfigManager().resolveEventMagicMode());
+
+            MythicBedwars.getInstance().log("Voting bypassed for event arena {} (magic mode {}).",
+                    arena.getName(), forced);
             return;
         }
 
@@ -42,7 +70,7 @@ public class VotingManager {
             !plugin.getConfigManager().isArenaEnabled(arena.getName()) ||
             !plugin.getConfigManager().isVotingEnabled()) {
             MythicBedwars.getInstance().log("Voting skipped for arena " + arena.getName() + " - voting or plugin disabled");
-            votingResults.put(arena.getName(), true);
+            votingResults.put(arena.getName(), plugin.getConfigManager().getDefaultMagicMode());
             return;
         }
 
@@ -68,13 +96,18 @@ public class VotingManager {
             return;
         }
 
-        ItemStack yesItem = createVotingItem(Material.LIME_DYE,
-                plugin.getLocaleManager().formatMessage("magic.voting.yes_item"),
-                plugin.getLocaleManager().formatMessage("magic.voting.yes_description"));
+        VotingSession session = arenaSessions.get(arena.getName());
+        if (session == null) {
+            return;
+        }
 
-        ItemStack noItem = createVotingItem(Material.RED_DYE,
-                plugin.getLocaleManager().formatMessage("magic.voting.no_item"),
-                plugin.getLocaleManager().formatMessage("magic.voting.no_description"));
+        List<MagicMode> ballot = session.ballot();
+        List<ItemStack> items = new ArrayList<>(ballot.size());
+        for (MagicMode mode : ballot) {
+            items.add(createVotingItem(mode));
+        }
+
+        int[] slots = ballot.size() >= 3 ? SLOTS_THREE : SLOTS_TWO;
 
         int delayTicks = plugin.getConfigManager().getVotingItemDelay() * 20;
         new BukkitRunnable() {
@@ -82,7 +115,7 @@ public class VotingManager {
             public void run() {
                 if (!player.isOnline()) return;
 
-                Arena currentArena = de.marcely.bedwars.api.BedwarsAPI.getGameAPI().getArenaByPlayer(player);
+                Arena currentArena = BedwarsAPI.getGameAPI().getArenaByPlayer(player);
                 if (currentArena == null || !currentArena.getName().equals(arena.getName())) {
                     MythicBedwars.getInstance().log("Player {} no longer in arena, skipping voting items", player.getName());
                     return;
@@ -93,50 +126,102 @@ public class VotingManager {
                     return;
                 }
 
-                player.getInventory().setItem(3, yesItem);
-                player.getInventory().setItem(5, noItem);
-                MythicBedwars.getInstance().log("Gave voting items to player: {}", player.getName());
+                for (int i = 0; i < items.size() && i < slots.length; i++) {
+                    player.getInventory().setItem(slots[i], items.get(i));
+                }
 
-                player.sendMessage(plugin.getLocaleManager().formatMessage("magic.voting.instructions"));
+                MythicBedwars.getInstance().log("Gave {} voting item(s) to player: {}", items.size(), player.getName());
+
+                player.sendMessage(plugin.getLocaleManager().formatMessage(player, "magic.voting.instructions"));
             }
         }.runTaskLater(plugin, delayTicks);
     }
 
-    private ItemStack createVotingItem(Material material, Component name, Component description) {
+    private ItemStack createVotingItem(MagicMode mode) {
+        Material material = switch (mode) {
+            case TEAM -> Material.LIME_DYE;
+            case INDIVIDUAL -> Material.PURPLE_DYE;
+            case OFF -> Material.RED_DYE;
+        };
+
+        NamedTextColor color = switch (mode) {
+            case TEAM -> NamedTextColor.GREEN;
+            case INDIVIDUAL -> NamedTextColor.LIGHT_PURPLE;
+            case OFF -> NamedTextColor.RED;
+        };
+
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
 
-        if (material == Material.LIME_DYE) {
-            meta.displayName(name.color(NamedTextColor.GREEN).decoration(TextDecoration.ITALIC, false));
-        } else {
-            meta.displayName(name.color(NamedTextColor.RED).decoration(TextDecoration.ITALIC, false));
-        }
+        meta.displayName(plugin.getLocaleManager()
+                .formatMessage("magic.voting.option." + mode.key() + ".name")
+                .color(color)
+                .decoration(TextDecoration.ITALIC, false));
 
-        meta.lore(java.util.List.of(description.color(NamedTextColor.GRAY).decoration(TextDecoration.ITALIC, false)));
+        meta.lore(List.of(plugin.getLocaleManager()
+                .formatMessage("magic.voting.option." + mode.key() + ".description")
+                .color(NamedTextColor.GRAY)
+                .decoration(TextDecoration.ITALIC, false)));
+
+        meta.getPersistentDataContainer().set(ballotKey, PersistentDataType.STRING, mode.name());
+
         item.setItemMeta(meta);
         return item;
     }
 
     public void removeVotingItems(Player player) {
-        player.getInventory().setItem(3, null);
-        player.getInventory().setItem(5, null);
+        for (int slot : SLOTS_THREE) {
+            clearBallotSlot(player, slot);
+        }
+        for (int slot : SLOTS_TWO) {
+            clearBallotSlot(player, slot);
+        }
     }
 
-    public void handleVoteClick(Player player, Material material) {
-        Arena arena = de.marcely.bedwars.api.BedwarsAPI.getGameAPI().getArenaByPlayer(player);
+    /**
+     * Clears a slot only when it still holds a ballot item. Both slot layouts are swept on cleanup,
+     * and they overlap with ordinary hotbar slots — blanking them unconditionally would delete
+     * whatever a player had moved there.
+     */
+    private void clearBallotSlot(Player player, int slot) {
+        ItemStack current = player.getInventory().getItem(slot);
+        if (current != null && readBallot(current) != null) {
+            player.getInventory().setItem(slot, null);
+        }
+    }
+
+    /**
+     * @return the mode this item votes for, or {@code null} when it is not a ballot item
+     */
+    public MagicMode readBallot(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
+            return null;
+        }
+
+        String raw = item.getItemMeta().getPersistentDataContainer()
+                .get(ballotKey, PersistentDataType.STRING);
+
+        return raw == null ? null : MagicMode.fromId(raw, null);
+    }
+
+    public void handleVoteClick(Player player, MagicMode mode) {
+        Arena arena = BedwarsAPI.getGameAPI().getArenaByPlayer(player);
         if (arena == null) return;
 
         VotingSession session = arenaSessions.get(arena.getName());
         if (session == null || !session.isActive()) {
-            player.sendMessage(plugin.getLocaleManager().formatMessage("magic.voting.not_active"));
+            player.sendMessage(plugin.getLocaleManager().formatMessage(player, "magic.voting.not_active"));
             return;
         }
 
-        boolean vote = material == Material.LIME_DYE;
-        session.castVote(player.getUniqueId(), vote);
+        if (!session.ballot().contains(mode)) {
+            return;
+        }
 
-        String messageKey = vote ? "magic.voting.voted_yes" : "magic.voting.voted_no";
-        player.sendMessage(plugin.getLocaleManager().formatMessage(messageKey));
+        session.castVote(player.getUniqueId(), mode);
+
+        player.sendMessage(plugin.getLocaleManager()
+                .formatMessage(player, "magic.voting.voted." + mode.key()));
     }
 
     public boolean hasActiveVoting(String arenaName) {
@@ -144,18 +229,33 @@ public class VotingManager {
         return session != null && session.isActive();
     }
 
-    public boolean isMagicEnabled(String arenaName) {
-        Boolean result = votingResults.get(arenaName);
+    /**
+     * @return the mode this arena is running, defaulting to the configured norm for an arena nobody
+     * has voted on
+     */
+    public MagicMode getMagicMode(String arenaName) {
+        MagicMode result = votingResults.get(arenaName);
         if (result != null) {
             return result;
         }
 
         VotingSession session = arenaSessions.get(arenaName);
         if (session != null) {
-            return session.isMagicEnabled();
+            return session.getResult();
         }
 
-        return true;
+        return plugin.getConfigManager().getDefaultMagicMode();
+    }
+
+    public boolean isMagicEnabled(String arenaName) {
+        return getMagicMode(arenaName).isMagicEnabled();
+    }
+
+    /**
+     * @return whether this arena hands pathways out per player rather than per team
+     */
+    public boolean isPerPlayerPathways(String arenaName) {
+        return getMagicMode(arenaName).isPerPlayer();
     }
 
     public void endVoting(Arena arena) {
@@ -163,11 +263,10 @@ public class VotingManager {
         if (session != null) {
             session.end();
 
-            boolean magicEnabled = session.isMagicEnabled();
-            votingResults.put(arena.getName(), magicEnabled);
+            MagicMode mode = session.getResult();
+            votingResults.put(arena.getName(), mode);
 
-            MythicBedwars.getInstance().log("Voting ended for arena: {} - Magic {}", arena.getName(),
-                    magicEnabled ? "ENABLED" : "DISABLED");
+            MythicBedwars.getInstance().log("Voting ended for arena: {} - magic mode {}", arena.getName(), mode);
 
             for (Player player : arena.getPlayers()) {
                 removeVotingItems(player);
@@ -187,9 +286,24 @@ public class VotingManager {
         MythicBedwars.getInstance().log("Cleaned up voting data for arena: {}", arenaName);
     }
 
-    public void setMagicEnabled(String arenaName, boolean enabled) {
-        votingResults.put(arenaName, enabled);
-        MythicBedwars.getInstance().log("Force set magic {} for arena: {}", enabled ? "ENABLED" : "DISABLED", arenaName);
+    /**
+     * Forces the round's mode, bypassing the vote. Used by the event orchestrator and by
+     * {@code /mb voting}.
+     */
+    public void setMagicMode(String arenaName, MagicMode mode) {
+        votingResults.put(arenaName, mode);
+        MythicBedwars.getInstance().log("Force set magic mode {} for arena: {}", mode, arenaName);
     }
 
+    /**
+     * Boolean form kept for the callers that only ever meant on-or-off; an "on" resolves to the
+     * configured default enabled mode rather than assuming teams.
+     */
+    public void setMagicEnabled(String arenaName, boolean enabled) {
+        setMagicMode(arenaName, enabled
+                ? plugin.getConfigManager().getDefaultMagicMode().isMagicEnabled()
+                    ? plugin.getConfigManager().getDefaultMagicMode()
+                    : MagicMode.TEAM
+                : MagicMode.OFF);
+    }
 }

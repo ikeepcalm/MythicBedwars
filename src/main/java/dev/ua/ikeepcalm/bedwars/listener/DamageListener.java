@@ -2,7 +2,6 @@ package dev.ua.ikeepcalm.bedwars.listener;
 
 import de.marcely.bedwars.api.BedwarsAPI;
 import de.marcely.bedwars.api.arena.Arena;
-import de.marcely.bedwars.api.arena.Team;
 import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
 import dev.ua.ikeepcalm.coi.api.event.AbilityUsageEvent;
 import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
@@ -30,10 +29,7 @@ public class DamageListener implements Listener {
         Arena arena = BedwarsAPI.getGameAPI().getArenaByPlayer(damager);
         if (arena == null) return;
 
-        Team team = arena.getPlayerTeam(damager);
-        if (team == null) return;
-
-        String pathway = plugin.getArenaPathwayManager().getTeamPathway(arena, team);
+        String pathway = plugin.getArenaPathwayManager().getPlayerPathway(damager);
         if (pathway == null) return;
 
         BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(damager);
@@ -50,10 +46,7 @@ public class DamageListener implements Listener {
         Arena arena = BedwarsAPI.getGameAPI().getArenaByPlayer(player);
         if (arena == null) return;
 
-        Team team = arena.getPlayerTeam(player);
-        if (team == null) return;
-
-        String pathway = plugin.getArenaPathwayManager().getTeamPathway(arena, team);
+        String pathway = plugin.getArenaPathwayManager().getPlayerPathway(player);
         if (pathway == null) return;
 
         if (plugin.getStatisticsManager() != null) {

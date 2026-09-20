@@ -1,6 +1,7 @@
 package dev.ua.ikeepcalm.bedwars;
 
 import dev.ua.ikeepcalm.bedwars.cmd.CommandManager;
+import dev.ua.ikeepcalm.bedwars.cmd.impls.PlayerCommand;
 import dev.ua.ikeepcalm.bedwars.cmd.impls.MinigameSubcommands;
 import dev.ua.ikeepcalm.bedwars.cmd.impls.SpectatorCommand;
 import dev.ua.ikeepcalm.bedwars.cmd.impls.UnavailableCommand;
@@ -9,6 +10,8 @@ import dev.ua.ikeepcalm.bedwars.config.LocaleLoader;
 import dev.ua.ikeepcalm.bedwars.config.NetworkRole;
 import dev.ua.ikeepcalm.bedwars.domain.balancer.PathwayBalancer;
 import dev.ua.ikeepcalm.bedwars.domain.core.PathwayManager;
+import dev.ua.ikeepcalm.bedwars.domain.core.ArenaEnvironmentService;
+import dev.ua.ikeepcalm.bedwars.domain.core.MaterialGrantService;
 import dev.ua.ikeepcalm.bedwars.domain.core.ShopManager;
 import dev.ua.ikeepcalm.bedwars.domain.core.StatisticsManager;
 import dev.ua.ikeepcalm.bedwars.domain.reward.*;
@@ -30,6 +33,7 @@ import dev.ua.ikeepcalm.bedwars.net.minigame.EventOrchestrator;
 import dev.ua.ikeepcalm.bedwars.net.minigame.EventReturnService;
 import dev.ua.ikeepcalm.bedwars.net.protocol.source.CancelReason;
 import dev.ua.ikeepcalm.bedwars.net.smp.RecruitmentManager;
+import dev.ua.ikeepcalm.bedwars.net.smp.ScheduleAnnouncer;
 import dev.ua.ikeepcalm.bedwars.net.smp.SmpEventListener;
 import dev.ua.ikeepcalm.bedwars.net.velocity.ServerTransferService;
 import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
@@ -59,6 +63,9 @@ public final class MythicBedwars extends JavaPlugin {
 
     private PathwayManager pathwayManager;
     private ShopManager shopManager;
+    private MaterialGrantService materialGrantService;
+    private ArenaEnvironmentService arenaEnvironmentService;
+    private ProjectileCooldownListener projectileCooldownListener;
     private StatisticsManager statisticsManager;
     private PathwayBalancer pathwayBalancer;
     private SpectatorManager spectatorManager;
@@ -80,6 +87,7 @@ public final class MythicBedwars extends JavaPlugin {
     private ServerTransferService transferService;
     private EventOrchestrator eventOrchestrator;
     private RecruitmentManager recruitmentManager;
+    private ScheduleAnnouncer scheduleAnnouncer;
     private EventReturnService returnService;
     private RewardService rewardService;
     private RewardConfig rewardConfig;
@@ -149,6 +157,14 @@ public final class MythicBedwars extends JavaPlugin {
 
     public RecruitmentManager getRecruitmentManager() {
         return this.recruitmentManager;
+    }
+
+    /**
+     * @return the player-facing countdown, or {@code null} in the minigame role, where there is no
+     * schedule to count down
+     */
+    public ScheduleAnnouncer getScheduleAnnouncer() {
+        return this.scheduleAnnouncer;
     }
 
     private static String format(String template, Object... objects) {
@@ -272,6 +288,9 @@ public final class MythicBedwars extends JavaPlugin {
         commandManager = new CommandManager(this);
         bindCommand("mythicbedwars", commandManager, commandManager);
 
+        PlayerCommand playerCommand = new PlayerCommand(this, commandManager.eventCommand());
+        bindCommand("bedwars", playerCommand, playerCommand);
+
         boolean started = switch (networkRole) {
             case MINIGAME -> enableMinigameRole();
             case SMP -> enableSmpRole();
@@ -308,6 +327,8 @@ public final class MythicBedwars extends JavaPlugin {
 
         pathwayManager = new PathwayManager();
         shopManager = new ShopManager(this);
+        materialGrantService = new MaterialGrantService(this);
+        arenaEnvironmentService = new ArenaEnvironmentService(this);
 
         database = new SQLiteDatabase(this);
         database.initialize();
@@ -501,6 +522,9 @@ public final class MythicBedwars extends JavaPlugin {
                     new SmpEventListener(this, redeemer, returnGreeter), this);
 
             recruitmentManager.startSchedule();
+
+            scheduleAnnouncer = new ScheduleAnnouncer(this, recruitmentManager);
+            scheduleAnnouncer.start();
         }
 
         // Only now: every handler is registered, so a backlog redelivered on subscribe is dispatched
@@ -569,6 +593,11 @@ public final class MythicBedwars extends JavaPlugin {
             rearmed.add("event schedule");
         }
 
+        if (scheduleAnnouncer != null) {
+            scheduleAnnouncer.start();
+            rearmed.add("event countdown");
+        }
+
         if (statisticsManager != null && database != null) {
             scheduleStatisticsSave();
             rearmed.add("statistics save");
@@ -608,6 +637,9 @@ public final class MythicBedwars extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new ServerShutdownListener(this), this);
         Bukkit.getPluginManager().registerEvents(new SpectatorListener(this), this);
         Bukkit.getPluginManager().registerEvents(new VotingListener(this), this);
+
+        projectileCooldownListener = new ProjectileCooldownListener(this);
+        Bukkit.getPluginManager().registerEvents(projectileCooldownListener, this);
     }
 
     private void registerPlanStatistics() {
@@ -669,6 +701,11 @@ public final class MythicBedwars extends JavaPlugin {
         if (eventOrchestrator != null) {
             eventOrchestrator.shutdown();
             eventOrchestrator = null;
+        }
+
+        if (scheduleAnnouncer != null) {
+            scheduleAnnouncer.stop();
+            scheduleAnnouncer = null;
         }
 
         if (recruitmentManager != null) {
@@ -768,6 +805,28 @@ public final class MythicBedwars extends JavaPlugin {
 
     public PathwayManager getArenaPathwayManager() {
         return pathwayManager;
+    }
+
+    /**
+     * @return the crafting-input dispenser, or {@code null} in the SMP role, where there are no
+     * matches to hand anything out in
+     */
+    public MaterialGrantService getMaterialGrantService() {
+        return materialGrantService;
+    }
+
+    /**
+     * @return the arena environment override, or {@code null} in the SMP role
+     */
+    public ArenaEnvironmentService getArenaEnvironmentService() {
+        return arenaEnvironmentService;
+    }
+
+    /**
+     * @return the projectile rate limiter, or {@code null} in the SMP role
+     */
+    public ProjectileCooldownListener getProjectileCooldownListener() {
+        return projectileCooldownListener;
     }
 
     public ShopManager getShopManager() {

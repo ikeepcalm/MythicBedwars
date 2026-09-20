@@ -45,9 +45,10 @@ public class PathwayVerificationTask extends BukkitRunnable {
             return;
         }
 
-        String teamPathway = plugin.getArenaPathwayManager().getTeamPathway(arena, team);
+        String teamPathway = plugin.getArenaPathwayManager().getExpectedPathway(arena, team, player);
         if (teamPathway == null) {
-            log.debug("Team {} has no assigned pathway in arena {}", team.getDisplayName(), arena.getName());
+            log.debug("No pathway is drawn for {} (team {}) in arena {}",
+                    player.getName(), team.getDisplayName(), arena.getName());
             return;
         }
 
