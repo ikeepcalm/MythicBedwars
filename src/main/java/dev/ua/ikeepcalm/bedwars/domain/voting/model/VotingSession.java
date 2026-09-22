@@ -7,11 +7,13 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.entity.Player;
 
-import java.util.EnumMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 
 public class VotingSession {
 
@@ -88,12 +90,35 @@ public class VotingSession {
             remindersRunning = false;
         }
 
-        int totalPlayers = arena.getPlayers().size();
+        // Ballots from players who left the lobby would otherwise both decide the round and push
+        // the participation ratio past 100%.
+        Set<UUID> present = new HashSet<>();
+        for (Player player : arena.getPlayers()) {
+            present.add(player.getUniqueId());
+        }
+        votes.keySet().retainAll(present);
+
+        int totalPlayers = present.size();
         int totalVotes = votes.size();
 
-        if (totalVotes == 0) {
-            result = plugin.getConfigManager().getDefaultMagicMode();
-            broadcastMessage("magic.voting.no_votes_at_all", NamedTextColor.YELLOW);
+        if (totalVotes == 0 || (double) totalVotes / Math.max(1, totalPlayers)
+                               < plugin.getConfigManager().getVotingMinParticipation()) {
+            MagicMode fallback = plugin.getConfigManager().getDefaultMagicMode();
+
+            // default-mode: OFF is the operator making magic opt-in, so a lobby that did not opt in
+            // keeps ordinary Bedwars rather than being rolled into magic.
+            if (!fallback.isMagicEnabled()) {
+                result = fallback;
+                broadcastMessage("magic.voting.no_votes_at_all", NamedTextColor.YELLOW);
+            } else {
+                result = rollMagicMode();
+                Component message = plugin.getLocaleManager().formatMessage("magic.voting.low_turnout",
+                        "voted", totalVotes, "total", totalPlayers);
+                for (Player player : arena.getPlayers()) {
+                    player.sendMessage(message.color(NamedTextColor.YELLOW));
+                }
+            }
+
             announceResult();
             return;
         }
@@ -118,35 +143,41 @@ public class VotingSession {
     }
 
     /**
-     * Decides the round's mode from the ballots cast.
+     * Decides the round's mode from the ballots cast, in two rounds.
      *
-     * <p>A straight plurality, which is the only tally that stays fair once there are three
-     * options: the old two-option rule demanded an absolute majority of <i>everyone present</i> to
-     * turn magic off, and carrying that forward would let a third of the lobby impose a mode the
-     * other two thirds each voted against.
+     * <p>First whether magic runs at all: {@code TEAM} and {@code INDIVIDUAL} are both votes for
+     * magic, and counting them apart would split that side. A straight three-way plurality let
+     * 3 team + 3 individual lose to 4 off, turning magic off for a lobby six tenths of which asked
+     * for it. Then, among the magic voters only, which kind.
      *
-     * <p>Ties break towards the earlier entry on the ballot — {@code TEAM}, then {@code INDIVIDUAL},
-     * then {@code OFF} — so a deadlocked lobby lands on the configured norm rather than on whichever
-     * enum constant happened to be iterated first.
+     * <p>Ties break towards magic, then towards the configured default mode (or {@code TEAM} when
+     * that default is {@code OFF}).
      */
     private MagicMode tally() {
-        Map<MagicMode, Integer> counts = new EnumMap<>(MagicMode.class);
-        for (MagicMode mode : votes.values()) {
-            counts.merge(mode, 1, Integer::sum);
+        int off = countVotes(MagicMode.OFF);
+        int team = countVotes(MagicMode.TEAM);
+        // Only while it is on the ballot: a reload that switched it off mid-lobby must not let
+        // ballots already cast for it win.
+        int individual = ballot().contains(MagicMode.INDIVIDUAL) ? countVotes(MagicMode.INDIVIDUAL) : 0;
+
+        if (off > team + individual) {
+            return MagicMode.OFF;
         }
 
-        MagicMode winner = null;
-        int best = -1;
-
-        for (MagicMode mode : ballot()) {
-            int count = counts.getOrDefault(mode, 0);
-            if (count > best) {
-                best = count;
-                winner = mode;
-            }
+        if (team == individual) {
+            MagicMode fallback = plugin.getConfigManager().getDefaultMagicMode();
+            return fallback.isMagicEnabled() ? fallback : MagicMode.TEAM;
         }
 
-        return winner == null ? plugin.getConfigManager().getDefaultMagicMode() : winner;
+        return team > individual ? MagicMode.TEAM : MagicMode.INDIVIDUAL;
+    }
+
+    /**
+     * @return one of the enabled modes on the ballot, at random
+     */
+    private MagicMode rollMagicMode() {
+        List<MagicMode> options = ballot().stream().filter(MagicMode::isMagicEnabled).toList();
+        return options.get(ThreadLocalRandom.current().nextInt(options.size()));
     }
 
     private void announceResult() {

@@ -270,7 +270,7 @@ public class PathwayManager {
             return resolveIndividualPathway(arena, team, player);
         }
 
-        return resolvePathwayFor(arena, team, player);
+        return resolveTeamPathway(arena, team);
     }
 
     /**

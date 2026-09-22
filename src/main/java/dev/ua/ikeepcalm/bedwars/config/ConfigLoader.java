@@ -656,6 +656,14 @@ public class ConfigLoader {
         return config.getBoolean("voting.individual-enabled", true);
     }
 
+    /**
+     * @return the fraction of a lobby that must vote for the ballots to decide the round, clamped
+     * to {@code [0, 1]}. Below it the vote is treated as noise and the magic mode is rolled.
+     */
+    public double getVotingMinParticipation() {
+        return Math.clamp(config.getDouble("voting.min-participation", 0.1), 0.0, 1.0);
+    }
+
     public int getVotingItemDelay() {
         return config.getInt("voting.item-delay", 3);
     }

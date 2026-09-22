@@ -148,8 +148,16 @@ public class ConfigBackfiller {
 
         if (set(config, changes, "voting.default-mode", "TEAM")) {
             comment(config, "voting.default-mode",
-                    "Used when nobody votes, when voting is disabled, and as the tie-break floor.",
-                    "TEAM keeps an upgraded server playing exactly as it did before.");
+                    "Used when voting is disabled, and as the tie-break floor between TEAM and INDIVIDUAL.",
+                    "TEAM keeps an upgraded server playing exactly as it did before. Set it to OFF to make magic",
+                    "opt-in: a lobby that does not vote then plays ordinary Bedwars instead of rolling a mode.");
+        }
+
+        if (set(config, changes, "voting.min-participation", 0.1)) {
+            comment(config, "voting.min-participation",
+                    "Fraction of the lobby that must vote for the ballots to count (0.1 = 10%). Below it, and",
+                    "when nobody votes at all, TEAM or INDIVIDUAL is rolled at random - a handful of voters in a",
+                    "full lobby should not decide the round for everyone else.");
         }
 
         if (set(config, changes, "network.event.magic-mode", "TEAM")) {

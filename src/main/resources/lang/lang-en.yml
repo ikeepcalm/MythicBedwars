@@ -67,6 +67,7 @@ magic:
       disabled: "&c🚫 Magic is &4DISABLED &cfor this game!"
     status: "&e📊 Votes: &aTeam {team} &7| &dIndividual {individual} &7| &cOff {off} &7| &fTotal: {total}"
     no_votes_at_all: "&fNo votes cast. &dThe default mode &fapplies."
+    low_turnout: "&fOnly &e{voted}&f of &e{total} &fvoted. &dThe magic mode was rolled at random."
     final_result: "&6🏆 Result: &aTeam {team} &7| &dIndividual {individual} &7| &cOff {off}"
     participation: "&b📈 Participation: &f{voted} &7out of &f{total} &7players"
     not_active: "&cVoting is currently inactive!"
