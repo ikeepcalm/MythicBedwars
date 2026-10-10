@@ -113,6 +113,27 @@ public final class RedisKeys {
     }
 
     /**
+     * The bundle popped for a player, kept until it is applied, so it survives a restart.
+     */
+    public String rewardsParked(java.util.UUID playerId) {
+        return key("rewards", "parked", playerId.toString());
+    }
+
+    /**
+     * Every parked bundle, for the startup check.
+     */
+    public String rewardsParkedPattern() {
+        return key("rewards", "parked", "*");
+    }
+
+    /**
+     * Who is draining this player's rewards right now, on any server.
+     */
+    public String rewardsDrain(java.util.UUID playerId) {
+        return key("rewards", "drain", playerId.toString());
+    }
+
+    /**
      * Who has already been paid for an event; the emit-side guard against paying twice.
      */
     public String rewardsGranted(String eventId) {
