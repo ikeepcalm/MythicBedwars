@@ -1,33 +1,140 @@
 package dev.ua.ikeepcalm.bedwars.config;
 
-import dev.ua.ikeepcalm.bedwars.util.LocaleBackfiller;
+import dev.ua.ikeepcalm.bedwars.MythicBedwars;
+import dev.ua.ikeepcalm.bedwars.config.models.source.Language;
+import dev.ua.ikeepcalm.bedwars.util.config.LocaleBackfiller;
+import lombok.RequiredArgsConstructor;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
-import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@RequiredArgsConstructor
 public class LocaleLoader {
 
-    private final JavaPlugin plugin;
-    private final Locale defaultLocale;
-    private final Map<Locale, FileConfiguration> locales;
+    private static final Language DEFAULT_LANGUAGE = Language.EN;
+    private static final List<String> BUNDLED_FILES = List.of("lang-en.yml", "lang-uk.yml");
 
-    public LocaleLoader(JavaPlugin plugin, Locale defaultLocale) {
-        this.plugin = plugin;
-        this.defaultLocale = defaultLocale;
-        this.locales = new java.util.concurrent.ConcurrentHashMap<>();
+    private final MythicBedwars plugin;
+    private volatile Map<Language, FileConfiguration> locales = Map.of();
+
+    public void loadLocales() {
+        File langFolder = new File(plugin.getDataFolder(), "lang");
+        langFolder.mkdirs();
+
+        for (String bundled : BUNDLED_FILES) {
+            if (!new File(langFolder, bundled).exists()) {
+                plugin.saveResource("lang/" + bundled, false);
+            }
+            List<String> added = LocaleBackfiller.apply(plugin, bundled);
+            if (!added.isEmpty()) {
+                plugin.getLogger().info(LocaleBackfiller.describe(bundled, added));
+            }
+        }
+
+        Map<Language, FileConfiguration> loaded = new EnumMap<>(Language.class);
+        File[] files = langFolder.listFiles((dir, name) -> name.startsWith("lang-") && name.endsWith(".yml"));
+        for (File file : files == null ? new File[0] : files) {
+            Language language = Language.fromFileName(file.getName());
+            if (language == null) {
+                plugin.log("Ignoring unsupported locale file: {}", file.getName());
+                continue;
+            }
+            loaded.put(language, load(file));
+        }
+        locales = loaded;
+    }
+
+    private FileConfiguration load(File file) {
+        FileConfiguration config = YamlConfiguration.loadConfiguration(file);
+        try (InputStream defaults = plugin.getResource("lang/" + file.getName())) {
+            if (defaults != null) {
+                config.setDefaults(YamlConfiguration.loadConfiguration(new InputStreamReader(defaults, StandardCharsets.UTF_8)));
+            }
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Could not read the bundled " + file.getName() + ": " + exception.getMessage());
+        }
+        return config;
+    }
+
+    public String getMessage(String key) {
+        return getMessage(key, DEFAULT_LANGUAGE);
+    }
+
+    public String getMessage(CommandSender recipient, String key) {
+        return getMessage(key, localeOf(recipient));
+    }
+
+    private String getMessage(String key, Language language) {
+        FileConfiguration config = locales.getOrDefault(language, locales.get(DEFAULT_LANGUAGE));
+        if (config == null) {
+            return "Missing locale: " + language;
+        }
+
+        String message = config.getString(key);
+        if (message != null) {
+            return message;
+        }
+        return language == DEFAULT_LANGUAGE ? "Missing key: " + key : getMessage(key, DEFAULT_LANGUAGE);
+    }
+
+    private List<String> getMessageList(String key, Language language) {
+        FileConfiguration config = locales.getOrDefault(language, locales.get(DEFAULT_LANGUAGE));
+        if (config == null) {
+            return List.of();
+        }
+        if (!config.isSet(key) && language != DEFAULT_LANGUAGE) {
+            return getMessageList(key, DEFAULT_LANGUAGE);
+        }
+        return config.getStringList(key);
+    }
+
+    public Component formatMessage(String key, Object... args) {
+        return render(getMessage(key, DEFAULT_LANGUAGE), args);
+    }
+
+    public Component formatMessage(CommandSender recipient, String key, Object... args) {
+        return render(getMessage(key, localeOf(recipient)), args);
+    }
+
+    public List<Component> formatMessageList(String key, Object... args) {
+        return formatMessageList(key, DEFAULT_LANGUAGE, args);
+    }
+
+    public List<Component> formatMessageList(CommandSender recipient, String key, Object... args) {
+        return formatMessageList(key, localeOf(recipient), args);
+    }
+
+    private List<Component> formatMessageList(String key, Language language, Object... args) {
+        return getMessageList(key, language).stream().map(line -> render(line, args)).toList();
+    }
+
+    public Language localeOf(CommandSender recipient) {
+        if (recipient instanceof Player player) {
+            for (Language language : locales.keySet()) {
+                if (language.matches(player.locale())) {
+                    return language;
+                }
+            }
+        }
+        return DEFAULT_LANGUAGE;
+    }
+
+    private Component render(String message, Object... args) {
+        String rendered = args.length < 2 ? message : substitute(message, args);
+        return LegacyComponentSerializer.legacyAmpersand().deserialize(rendered);
     }
 
     private static String substitute(String message, Object... args) {
@@ -38,225 +145,18 @@ public class LocaleLoader {
 
         StringBuilder out = new StringBuilder(message.length() + 16);
         int cursor = 0;
-
         while (cursor < message.length()) {
             int open = message.indexOf('{', cursor);
-            if (open < 0) {
-                break;
-            }
-
-            int close = message.indexOf('}', open + 1);
+            int close = open < 0 ? -1 : message.indexOf('}', open + 1);
             if (close < 0) {
                 break;
             }
 
-            String name = message.substring(open + 1, close);
-            String value = values.get(name);
-
-            out.append(message, cursor, open);
-            // An unknown placeholder is left exactly as written, so a missing argument is visible
-            // rather than silently blanking part of the sentence.
-            out.append(value == null ? message.substring(open, close + 1) : value);
+            String value = values.get(message.substring(open + 1, close));
+            out.append(message, cursor, open).append(value == null ? message.substring(open, close + 1) : value);
             cursor = close + 1;
         }
-
         out.append(message, cursor, message.length());
         return out.toString();
-    }
-
-    private void saveDefaultLocale(String fileName) {
-        File localeFile = new File(plugin.getDataFolder() + "/lang", fileName);
-        if (!localeFile.exists()) {
-            plugin.saveResource("lang/" + fileName, false);
-        }
-    }
-
-    public String getMessage(String key) {
-        return getMessage(key, defaultLocale);
-    }
-
-    public String getMessage(String key, Locale locale) {
-        FileConfiguration config = locales.getOrDefault(locale, locales.get(defaultLocale));
-        if (config == null) {
-            return "Missing locale: " + locale;
-        }
-
-        String message = config.getString(key);
-        if (message == null) {
-            if (!locale.equals(defaultLocale)) {
-                return getMessage(key, defaultLocale);
-            }
-            return "Missing key: " + key;
-        }
-
-        return message;
-    }
-
-    public void loadLocales() {
-        File langFolder = new File(plugin.getDataFolder(), "lang");
-        if (!langFolder.exists()) {
-            langFolder.mkdirs();
-        }
-
-        // Cleared so /mb reload can drop a locale file that has been removed.
-        locales.clear();
-
-        saveDefaultLocale("lang-en.yml");
-        saveDefaultLocale("lang-uk.yml");
-
-        // Then merge in whatever this release added. Without this a server that has been running
-        // since an earlier version keeps a language file frozen at whatever shipped then: the new
-        // strings still resolve, through setDefaults below, but never appear anywhere the operator
-        // can read or translate them.
-        for (String bundled : List.of("lang-en.yml", "lang-uk.yml")) {
-            List<String> added = LocaleBackfiller.apply(plugin, bundled);
-            if (!added.isEmpty()) {
-                plugin.getLogger().info(LocaleBackfiller.describe(bundled, added));
-            }
-        }
-
-        File[] localeFiles = langFolder.listFiles((dir, name) -> name.startsWith("lang-") && name.endsWith(".yml"));
-        if (localeFiles != null) {
-            for (File file : localeFiles) {
-                String localeName = file.getName().replace("lang-", "").replace(".yml", "");
-                FileConfiguration config = YamlConfiguration.loadConfiguration(file);
-
-                InputStream defaultStream = plugin.getResource("lang/" + file.getName());
-                if (defaultStream != null) {
-                    YamlConfiguration defaultConfig = YamlConfiguration.loadConfiguration(
-                            new InputStreamReader(defaultStream, StandardCharsets.UTF_8));
-                    config.setDefaults(defaultConfig);
-                }
-
-                Locale parsed;
-                try {
-                    parsed = Locale.valueOf(localeName.toUpperCase(java.util.Locale.ROOT));
-                } catch (IllegalArgumentException unknown) {
-                    // Somebody dropped a lang-de.yml in. Skip it rather than failing every other
-                    // locale along with it.
-                    if (plugin instanceof dev.ua.ikeepcalm.bedwars.MythicBedwars mythicBedwars) {
-                        mythicBedwars.log("Ignoring unsupported locale file: {}", file.getName());
-                    }
-                    continue;
-                }
-
-                locales.put(parsed, config);
-                if (plugin instanceof dev.ua.ikeepcalm.bedwars.MythicBedwars mythicBedwars) {
-                    mythicBedwars.log("Loaded locale: " + localeName);
-                }
-            }
-        }
-    }
-
-    /**
-     * Reads a key holding a list of lines, for multi-line copy such as the event announcement.
-     *
-     * @return an empty list when the key is absent or not a list, so an operator can switch a whole
-     * section off simply by emptying it
-     */
-    public List<String> getMessageList(String key, Locale locale) {
-        FileConfiguration config = locales.getOrDefault(locale, locales.get(defaultLocale));
-        if (config == null) {
-            return List.of();
-        }
-
-        // Fall back only when this locale does not define the key at all. An explicitly emptied
-        // list is an operator switching that section off, and must not resurrect the English one.
-        if (!config.isSet(key) && !locale.equals(defaultLocale)) {
-            return getMessageList(key, defaultLocale);
-        }
-        return config.getStringList(key);
-    }
-
-    /**
-     * List counterpart of {@link #formatMessage}, with the same {@code {name}} placeholders applied
-     * to every line.
-     */
-    public List<Component> formatMessageList(String key, Object... args) {
-        return formatMessageList(key, defaultLocale, args);
-    }
-
-    public List<Component> formatMessageList(String key, Locale locale, Object... args) {
-        List<String> lines = getMessageList(key, locale);
-        List<Component> formatted = new ArrayList<>(lines.size());
-        for (String line : lines) {
-            formatted.add(render(line, args));
-        }
-        return formatted;
-    }
-
-    public Component formatMessage(String key, Object... args) {
-        return formatMessage(key, defaultLocale, args);
-    }
-
-    public Component formatMessage(String key, Locale locale, Object... args) {
-        return render(getMessage(key, locale), args);
-    }
-
-    /**
-     * List counterpart resolved for one recipient.
-     */
-    public List<Component> formatMessageList(CommandSender recipient, String key, Object... args) {
-        return formatMessageList(key, localeOf(recipient), args);
-    }
-
-    /**
-     * Formats a message in the recipient's own language.
-     *
-     * <p>Without this every lookup resolved to the default locale, which meant the shipped
-     * {@code lang-uk.yml} was never read by anything — a whole translation that existed on disk and
-     * could not be reached. Prefer this overload anywhere the recipient is known.
-     */
-    public Component formatMessage(CommandSender recipient, String key, Object... args) {
-        return formatMessage(key, localeOf(recipient), args);
-    }
-
-    /**
-     * Raw string in the recipient's own language, for the few places that need to compose one.
-     */
-    public String getMessage(CommandSender recipient, String key) {
-        return getMessage(key, localeOf(recipient));
-    }
-
-    /**
-     * Maps a recipient onto a shipped locale.
-     *
-     * @return the client's language when there is a translation for it, otherwise the default.
-     * Console and command blocks always get the default.
-     */
-    public Locale localeOf(CommandSender recipient) {
-        if (!(recipient instanceof Player player)) {
-            return defaultLocale;
-        }
-
-        String language = player.locale().getLanguage();
-        for (Locale candidate : Locale.values()) {
-            if (candidate.name().equalsIgnoreCase(language) && locales.containsKey(candidate)) {
-                return candidate;
-            }
-        }
-
-        return defaultLocale;
-    }
-
-    /**
-     * Substitutes {@code {name}} placeholders in a single pass.
-     *
-     * <p>Repeated {@code String.replace} calls would let a substituted <em>value</em> that happens to
-     * contain a later placeholder be substituted in turn — so a player-supplied name or an arena id
-     * could rewrite the rest of the line.
-     */
-    private Component render(String message, Object... args) {
-        String rendered = args.length < 2 ? message : substitute(message, args);
-        return LegacyComponentSerializer.legacyAmpersand().deserialize(rendered);
-    }
-
-    /**
-     * The shipped translations. Names double as ISO 639-1 language codes, which is how
-     * {@link #localeOf} matches a player's client language.
-     */
-    public enum Locale {
-        EN,
-        UK
     }
 }

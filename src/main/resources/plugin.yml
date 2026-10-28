@@ -1,7 +1,7 @@
 name: MythicBedwars
 version: '${version}'
 main: dev.ua.ikeepcalm.bedwars.MythicBedwars
-api-version: '1.21'
+api-version: '26.3'
 authors: [ ikeepcaIm ]
 description: "Magic addon for Marcely's Bedwars using Circle of Imagination"
 depend:
@@ -9,32 +9,16 @@ depend:
 softdepend:
   - MBedwars
   - Plan
-# Resolved at first startup into this plugin's own classloader, so a different Jedis version
-# shipped by another plugin cannot clash with ours.
 libraries:
   - redis.clients:jedis:${jedisVersion}
-  # Jedis' pool configuration is referenced directly by JedisRedisClient, so it is listed in its own
-  # right rather than relied on as a transitive that a future Jedis might shade or drop.
   - org.apache.commons:commons-pool2:${commonsPoolVersion}
-  # Statistics storage. Paper happens to ship a driver today, but depending on that is not a plan.
   - org.xerial:sqlite-jdbc:${sqliteVersion}
 commands:
   mythicbedwars:
     description: "Main MythicBedwars command"
     usage: "/mythicbedwars <event|toggle|reload|stats|arena|balance|pathways|voting>"
-    # Deliberately NOT permission-gated at the command level. Bukkit would reject an ordinary player
-    # before the executor ran, and "/mb event join" is the relog-proof way to sign up once a chat
-    # button has expired. CommandManager checks mythicbedwars.admin per subcommand instead.
     aliases: [mb, mbw]
   bedwars:
-    # The player-facing command. Deliberately NOT permission-gated here, for the same reason as
-    # /mythicbedwars: Bukkit rejects the sender before the executor runs, and every branch of this
-    # one is meant for ordinary players. Each branch checks mythicbedwars.event.join itself.
-    #
-    # No aliases on purpose. MBedwars owns /bw and very likely lists "bedwars" among its own
-    # aliases; a primary name beats another plugin's alias in Bukkit's command map, but adding
-    # more labels here would only create more ways to lose that race. /mb event next and
-    # /mb event join remain as fallbacks, and /mythicbedwars:bedwars always resolves.
     description: "When the next Bedwars event is, and how to sign up"
     usage: "/bedwars [next|join]"
   mbspec:

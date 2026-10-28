@@ -1,23 +1,7 @@
 package dev.ua.ikeepcalm.bedwars.net.transport;
 
-/**
- * Server-side scripts, kept together so the atomicity guarantees are readable in one place.
- */
-public final class LuaScripts {
+public class LuaScripts {
 
-    /**
-     * Adds one player to an event roster, or explains why not — in a single atomic step.
-     *
-     * <p>Doing this from Java would be check-then-write across several round trips, and two players
-     * clicking at the same moment could both pass the cap check. Inside Redis the whole thing is
-     * one operation, so the cap is exact no matter how many people click at once or how many SMP
-     * nodes are running.
-     *
-     * <p>{@code KEYS[1]} roster set, {@code KEYS[2]} event hash.
-     * {@code ARGV[1]} player uuid, {@code ARGV[2]} cap, {@code ARGV[3]} roster ttl seconds.
-     *
-     * <p>Returns the new roster size on success, or one of the negative codes below.
-     */
     public static final String SIGNUP = """
             if redis.call('HGET', KEYS[2], 'state') ~= 'ANNOUNCED' then return -1 end
             if redis.call('SISMEMBER', KEYS[1], ARGV[1]) == 1 then return -2 end
@@ -27,14 +11,6 @@ public final class LuaScripts {
             return redis.call('SCARD', KEYS[1])
             """;
 
-    /**
-     * Writes a whole hash and (re)sets its expiry together.
-     *
-     * <p>HSET followed by a separate EXPIRE can lose the second half to a dropped connection,
-     * leaving a hash that never expires and that nothing else cleans up.
-     *
-     * <p>{@code KEYS[1]} hash. {@code ARGV[1]} ttl seconds, then field/value pairs.
-     */
     public static final String HSET_WITH_TTL = """
             for i = 2, #ARGV, 2 do
               redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1])
@@ -43,37 +19,24 @@ public final class LuaScripts {
             return 1
             """;
 
-    /**
-     * Adds a set member and refreshes the set's expiry together, for the same reason.
-     *
-     * <p>{@code KEYS[1]} set. {@code ARGV[1]} member, {@code ARGV[2]} ttl seconds.
-     */
     public static final String SADD_WITH_TTL = """
             redis.call('SADD', KEYS[1], ARGV[1])
             redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
             return redis.call('SCARD', KEYS[1])
             """;
 
-    /**
-     * Pushes onto the head of a list and refreshes its expiry together.
-     *
-     * <p>{@code KEYS[1]} list. {@code ARGV[1]} value, {@code ARGV[2]} ttl seconds.
-     */
     public static final String LPUSH_WITH_TTL = """
             redis.call('LPUSH', KEYS[1], ARGV[1])
             redis.call('EXPIRE', KEYS[1], tonumber(ARGV[2]))
             return redis.call('LLEN', KEYS[1])
             """;
 
-    /** Signups are not open (yet, or any more). */
+    public static final String DELETE_IF_EQUALS = """
+            if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
+            return 0
+            """;
+
     public static final long SIGNUP_CLOSED = -1L;
-
-    /** This player is already on the roster. */
     public static final long SIGNUP_DUPLICATE = -2L;
-
-    /** The roster is at capacity. */
     public static final long SIGNUP_FULL = -3L;
-
-    private LuaScripts() {
-    }
 }

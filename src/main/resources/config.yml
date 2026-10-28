@@ -1,30 +1,13 @@
-# MythicBedwars Configuration
-
-# Cross-server event games ("recruit from the SMP")
-#
-# The same jar runs on both the survival server and the Bedwars server; `role` decides which half
-# boots here. Leave `enabled: false` for a standalone Bedwars server - nothing below is read then,
-# and the plugin behaves exactly as it always has.
 network:
   enabled: false
-  # SMP      - the survival server players are recruited from (MBedwars not required)
-  # MINIGAME - the Bedwars server that hosts the matches
+  # SMP or MINIGAME
   role: MINIGAME
-
-  # Unique per backend, and REQUIRED once network.enabled is true. Two servers sharing an id
-  # overwrite each other's heartbeat and each accepts messages addressed to the other.
   server-id: "bw-1"
 
-  # Server names as they appear in velocity.toml. Requires bungee-plugin-message-channel to be
-  # enabled on the proxy (it is by default).
   velocity:
-    # This backend's own name - what other servers use to reach it.
     this-server: "bedwars"
-    # Where finished players are sent back to.
     smp-server: "survival"
-    # Where recruited players are sent.
     minigame-server: "bedwars"
-    # Ticks between consecutive transfers when moving a whole roster.
     transfer-stagger-ticks: 5
 
   redis:
@@ -34,8 +17,6 @@ network:
     database: 0
     ssl: false
     timeout-ms: 2000
-    # Prefix for every key this plugin writes. Deliberately different from Circle of Imagination's
-    # "coi" prefix, so both plugins can share one Redis instance.
     namespace: "mythicbedwars"
     pool:
       max-total: 8
@@ -44,162 +25,72 @@ network:
 
   event:
     enabled: true
-    # A match below min-players is not worth running; max-players is the roster cap the SMP
-    # advertises, further capped by the chosen arena's real capacity.
     min-players: 4
     max-players: 16
 
-    # --- SMP role: offering events without being asked -----------------------
-    # The survival server offers one match per interval-hours, whenever min-players are online -
-    # the difference between a feature that runs and one that waits for an admin to remember it
-    # exists. Nothing is announced to players until a Bedwars server has accepted.
-    #
-    # When the last offer went out is remembered in two places: schedule.yml next to this file, and
-    # a Redis key whose TTL is the interval. The file is what makes the interval survive a restart
-    # of the server or of Redis; the Redis key is what stops two survival nodes offering at once.
-    # A window is only spent on an event that was actually offered: if no Bedwars server answers,
-    # the next check tries again.
     schedule:
       enabled: true
-      # Hours between events. Fractions are allowed (0.5 = every 30 minutes).
+      # fractions allowed, 0.5 = every 30 minutes
       interval-hours: 5
-      # Players who must be online for the event to be worth offering. Anyone holding
-      # mythicbedwars.event.exempt is not counted, since they will never be asked.
       min-players: 40
-      # How promptly a due window is noticed once the players are there. Not how often events run.
       check-seconds: 120
 
-      # Telling players when the next attempt is due, and when it looks like it will not happen.
-      # Without this the schedule is invisible: events appear out of nowhere, and a server sitting
-      # one player under min-players has no way of learning that is why none have run.
       countdown:
         enabled: true
-        # Minutes-remaining marks at which to broadcast. Empty disables the broadcast, leaving
-        # /mb event next as the only way to ask.
         broadcast-minutes: [ 60, 30, 10 ]
-        # How close the next attempt must be before a player shortfall is worth mentioning.
-        # Warning six hours out is noise; warning in the last hour is something players can act on.
         shortfall-warn-minutes: 60
-    # How long signups stay open once a host accepts.
-    # Read by the MINIGAME role only: the host commits to holding its arena until this deadline and
-    # sends it in its acceptance, so the SMP honours the host's value rather than its own.
     signup-seconds: 120
-    # Seconds-remaining marks at which to re-broadcast the offer.
     signup-reminders: [ 90, 60, 30, 10 ]
-    # How long to wait for a Bedwars server to answer a proposal.
     propose-timeout-seconds: 10
-    # How long the host holds its arena open for recruits to cross the proxy.
     arrival-grace-seconds: 60
-    # After the arrival window, how long spare slots stay open to players already on the Bedwars
-    # server. Set to 0 to keep event matches strictly roster-only.
     fill-window-seconds: 20
-    # Countdown pushed out each second so MBedwars never auto-starts a held arena.
     lobby-hold-seconds: 120
-    # Visible countdown once the match is actually going ahead.
     start-countdown-seconds: 5
-    # Fewest arrivals worth starting with, however many signed up.
     min-arrivals: 4
-    # How long an eliminated player may linger before being sent home automatically.
     auto-return-seconds: 30
-    # Pause after the final kill before winners are moved, so the celebration is not cut short.
     winner-return-delay-seconds: 15
-    # How often stale or orphaned events are swept up.
     reap-interval-seconds: 30
-    # Quiet period after an event finishes, so a busy server does not spam offers.
     cooldown-minutes: 60
-    # How long an event's Redis keys survive without an update. A half-finished event frees itself.
     event-ttl-seconds: 900
-    # Event matches always run with magic on, bypassing the usual vote.
     force-magic: true
-    # Which magic mode an event match runs in, since it never holds a vote.
-    #   TEAM       - one pathway per team (the classic shape)
-    #   INDIVIDUAL - one pathway per player
-    #   RANDOM     - one of the two above, rolled once per event
-    # force-magic: false wins outright; this is only read when magic is on at all.
+    # TEAM, INDIVIDUAL or RANDOM
     magic-mode: RANDOM
-    # Whether spectators may watch an event match. With this off, a player who dies and chooses to
-    # spectate is offered a ride home instead.
     allow-spectators: true
-    # Whether players already on the Bedwars server are told when spare slots open to them. Without
-    # it they have no way of knowing - the recruitment broadcast goes out on the survival server.
     announce-locally: true
-
-    # How often an in-flight event reconciles against its durable Redis record. Pub/sub has no
-    # replay, so this is what turns a dropped message into a two-second delay rather than an event
-    # that never finishes.
     sync-interval-seconds: 2
-
-    # Team count to favour when several arenas hold the turnout equally well. Four is the classic
-    # Bedwars shape: it is what makes sixteen players land on a 4x4 rather than an 8x2, and four
-    # players on a 1v1v1v1 rather than a 2v2. Capacity fit always comes first.
     preferred-team-count: 4
-
-    # Empty whitelist means any eligible arena. Blacklist always wins.
     arena-whitelist: []
     arena-blacklist: []
-    # Favoured when several arenas fit equally well.
     prefer-arenas: []
 
   heartbeat:
-    # How often this server republishes its liveness key, and how long that key survives without a
-    # refresh. A server that dies simply stops appearing once its key expires.
     interval-seconds: 5
     ttl-seconds: 15
     stale-after-seconds: 20
 
-# Global plugin settings
 global:
   enabled: true
 
 voting:
-  # Enable voting system
   enabled: true
-
-  # The lobby picks between three magic modes:
-  #   TEAM       - one pathway per team, shared by everyone on it
-  #   INDIVIDUAL - one pathway per player, drawn distinctly across the whole arena
-  #   OFF        - ordinary Bedwars
-  #
-  # INDIVIDUAL exists because pathways are not equally suited to Bedwars: a team that draws a
-  # non-combat pathway is behind before the round starts. Spreading the draw over players means
-  # every team ends up holding a mix, so no team is carried by one unlucky roll.
-  #
-  # Whether INDIVIDUAL is offered on the ballot at all. With this off the vote is the original
-  # two-option one, and a default-mode of INDIVIDUAL falls back to TEAM.
   individual-enabled: true
-  # Used when voting is disabled, and as the tie-break floor between TEAM and INDIVIDUAL.
-  # TEAM keeps an upgraded server playing exactly as it did before. Set it to OFF to make magic
-  # opt-in: a lobby that does not vote then plays ordinary Bedwars instead of rolling a mode.
+  # TEAM, INDIVIDUAL or OFF
   default-mode: TEAM
-  # Fraction of the lobby that must vote for the ballots to count (0.1 = 10%). Below it, and
-  # when nobody votes at all, TEAM or INDIVIDUAL is rolled at random - a handful of voters in a
-  # full lobby should not decide the round for everyone else.
+  # fraction of the lobby, 0.1 = 10%
   min-participation: 0.1
-
-  # Delay in seconds before giving voting items to players
   item-delay: 3
-  # Show reminders to vote
   reminders-enabled: true
-  # Interval between reminders in seconds
   reminder-interval: 10
-  # Maximum number of reminders
   max-reminders: 5
 
-# Acting progression multipliers
 acting:
-  # Base amount of acting gained per second
   passive-amount: 10
-  # Multiplier for passive acting gain
   passive-multiplier: 1.0
-  # Multiplier for kills
   kill-multiplier: 5.0
-  # Multiplier for final kills
   final-kill-multiplier: 7.0
-  # Multiplier for breaking enemy beds
   bed-break-multiplier: 10.0
-  # Fraction of current acting lost on regular death (0.0 = disabled, 0.15 = 15%)
+  # fraction of current acting, 0.15 = 15%
   death-penalty: 0.15
-  # Per-sequence passive acting multipliers (higher sequence = weaker player = faster gain)
   sequence-multipliers:
     9: 3.5
     8: 3.0
@@ -212,75 +103,35 @@ acting:
     1: 0.1
     0: 0.05
 
-# Pathway settings
 pathways:
-  # Automatically balance pathway assignments based on win rates
   auto-balance: true
-  # Threshold for considering a pathway overpowered/underpowered (10% = 0.1)
   balance-threshold: 0.1
-  # Minimum games required before a pathway is included in balancing calculations
-  min-games-for-balance: 3
-  # List of disabled pathways (pathway names)
+  min-games-for-balance: 20
   disabled: []
-  # Pathways whose whole point is making things (Paragon, Moon) arrive in a Bedwars match with
-  # nothing to make anything from: ingredients and characteristics normally come from mining nodes
-  # and foundables accumulated over days of survival play. These settings are the match's own
-  # supply of them.
   crafting:
-    # Whether a kill yields a crafting ingredient of the killer's own pathway.
     kill-drops: true
-    # Which pathways earn the drop. An EMPTY list means every pathway, which is deliberately not
-    # the default: this exists to fix pathways that cannot otherwise build anything, and giving it
-    # to combat pathways as well is a straight power increase.
+    # empty list means every pathway
     pathways: [ paragon, moon ]
-    # Chance of a drop, 0.0 - 1.0.
     kill-drop-chance: 0.7
     final-kill-drop-chance: 1.0
-
-  # List of blocked abilities (ability names)
   blocked-abilities:
     - "thread-hands"
     - "nightmare"
     - "travellers-door"
     - "divination"
 
-# Shop limits, per sequence. Omitted or -1 means unlimited.
-# Keys are sequence-0 .. sequence-9, where a LOWER number is a stronger Beyonder - so the tighter
-# limits belong at the low end.
 shop:
+  # sequence-0 .. sequence-9 -> max purchases, -1 or omitted = unlimited
   max-purchases: { }
-
-  # Beyonder crafting inputs, sold from the shop's Arcane Materials page.
-  #
-  # The special-item ids are magic_char_<0-9> and magic_ingredient_<0-9>, where the number is the
-  # STRONGEST sequence that tier may roll - remember COI's inversion, where a lower number is the
-  # stronger Beyonder. magic_ingredient_6 therefore rolls a Sequence 6, 7, 8 or 9 ingredient.
-  #
-  # A characteristic comes from a RANDOM pathway (for Paragon that is what decides the crafted
-  # artifact's abilities). An ingredient always comes from the BUYER'S OWN pathway, since an
-  # ingredient for somebody else's recipe is litter.
-  #
-  # Everything bought here is tagged and reclaimed when the player leaves the arena: these are real
-  # progression items and the match is played on a server players are transferred home from.
   materials:
     enabled: true
-    # Which pathways may buy. Empty means all of them.
     pathways: [ ]
-    # How many a single player may buy in one match. -1 for no limit.
     max-per-match: 8
 
-# Rate limits on the ordinary projectiles, so fireballs and bows cannot simply be held down.
-#
-# Deliberately keyed on the LAUNCHING ITEM, never on the projectile entity. Circle of Imagination
-# casts its abilities as plain snowballs, arrows and fireballs with nothing on them to distinguish
-# them, so a limit that watched the projectile would throttle Beyonder abilities too. Nothing here
-# can reach an ability: abilities keep their own COI cooldowns.
 combat:
   projectile-cooldowns:
     enabled: true
-    # Seconds between uses. Omit a key, or set it to 0, for no limit.
-    # Vanilla keys: bow, crossbow, egg, snowball, ender_pearl, splash_potion, lingering_potion
-    # MBedwars keys: any special-id exactly as shop.yml spells it (fireball, egg-bridger, tower...)
+    # seconds; vanilla item keys or an MBedwars special-id as shop.yml spells it
     items:
       bow: 1.5
       crossbow: 2.0
@@ -289,23 +140,14 @@ combat:
       snowball: 0.5
       ender_pearl: 5.0
 
-# Spectator features
 spectator:
-  # Enable magical spectator features
   enabled: true
-  # Default settings for new spectators
   hud-default: true
   actionbar-default: true
   detailed-default: false
-  # Update interval in ticks (20 = 1 second)
   update-interval-ticks: 20
 
 statistics:
   save-interval-seconds: 300
 
-# Arena-specific settings (optional overrides)
-arenas:
-# Example:
-# arena-name:
-#   enabled: true
-#   spectator-features: true
+arenas: {}

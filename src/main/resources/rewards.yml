@@ -1,61 +1,21 @@
-# Event Rewards
-# ============================================================
-# What players earn from a cross-server event match.
-#
-# Percentages are a share of the player's CURRENT SEQUENCE bar on the survival server, not of the
-# throwaway Sequence-9 loadout they play the match with. A win is meant to read as "one good
-# bounty" — supplementary to normal play, never a replacement for it.
-#
-# Circle of Imagination's own bounties pay 0.1-5.0%, clustering around 0.5-2.5%, and its EVENT
-# source is capped per sequence (40% at Sequence 9 tapering to 10% at Sequence 3). The numbers
-# below are sized so a committed player gets six to eight meaningful matches per sequence before
-# that cap starts refusing grants — rather than spending the whole budget in three and then seeing
-# "cap reached" forever.
-#
-# Each tier rolls its `guaranteed` entries always, then `rolls` more from `pool` by weight. Pool
-# draws are WITHOUT replacement, so two rolls are always two different prizes.
-
 rewards:
   enabled: true
 
-  # How long an unclaimed bundle waits in Redis for the player to come back.
   queue-ttl-days: 30
-  # Most bundles one player may have stockpiled; the oldest fall off beyond this.
   max-queued-bundles: 10
-  # Past this many bundles in a day, only the participation tier is paid.
   max-bundles-per-day: 8
-  # Past this many, nothing is paid at all. Defaults to double the soft limit.
   max-bundles-per-day-hard: 16
 
-  # Where acting grants are booked. EVENT keeps them from eating the budget that duels and
-  # spell-on-uniques compete for. Falls back automatically on a CircleOfImagination that predates it.
   acting-source: EVENT
 
-  # What to do when the player is not a Beyonder on the survival server. SUBSTITUTE converts
-  # non-item grants into acting bottles they can use once they awaken; HOLD re-queues the whole
-  # bundle untouched until they have a profile to apply it to. Neither discards.
   non-beyonder-policy: SUBSTITUTE
-  # Baseline acting for a substituted bottle. Scaled up by the size of the grant it replaces, so a
-  # winner's headline grant does not collapse into the same consolation prize as a minimal one.
   fallback-bottle-acting: 300
-  # Paid as acting instead when a cooldown credit has nothing to shave — either because the loaded
-  # COI cannot credit cooldowns, or because the player's acting method was already ready.
   cooldown-substitute-percent: 2.0
+  cooldown-substitute-ratio: 0.1
 
-  # REQUEUE keeps overflow items safe for the next login; DROP puts them on the floor.
   item-overflow: REQUEUE
 
-  # ----------------------------------------------------------
-  # Exchange token power ceiling
-  # ----------------------------------------------------------
-  # Read this carefully, because the scale is inverted: in Circle of Imagination a LOWER sequence
-  # number is a STRONGER one, and a token's exchange GUI offers everything from Sequence 9 down to
-  # the ceiling it carries. So 9 means "weakest tier only" and 1 means "almost anything".
-  #
-  # Weights are relative and drawn per token, on the Bedwars server, at match end. The shape below
-  # is deliberate: a token is usually a modest prize, but roughly one in eleven reaches Sequence 4
-  # or better. A token that could never be more than the weakest tier is worse than no token at
-  # all — it reads as an insult — and the thin tail is what makes the line worth wanting.
+  # lower sequence is stronger: 9 offers only the weakest tier
   token-sequences:
     9: 38
     8: 24
@@ -67,30 +27,20 @@ rewards:
     2: 1.5
     1: 0.5
 
+  performance:
+    acting-percent-per-point: 0.08
+    max-acting-percent: 3.0
+
   eligibility:
-    # Time actually spent in the match before a reward is owed.
     min-play-time-seconds: 120
-    # Kills, final kills, beds, or shop purchases — anything at all, to exclude the pure AFK body.
     min-actions: 1
-    # Matches smaller than this pay nothing, or two accounts could farm the winner tier.
     min-players: 4
-    # Share of the time a player was *in play* (not of the whole match — being eliminated early
-    # costs nothing) that they must have looked active for. A sample counts if they moved, turned
-    # their head, sent any input in the last 10s, or did something in the last minute, so a defender
-    # standing on their bed island scores near 1.0. Only an unattended body sits below this.
     min-participation-ratio: 0.10
-    # Above the threshold the participation grant scales by the ratio, but never below this floor —
-    # a quiet match is worth less, not worth nothing. The winner tier is never scaled, because a
-    # carried teammate still genuinely won.
     participation-scale-floor: 0.5
-    # Walking out of a running match forfeits. Losing, being eliminated, choosing to spectate, the
-    # arena stopping, or the connection dropping do not.
     deny-rage-quit: true
 
   redeem:
-    # Delay after login before applying, so COI has finished loading the player's Beyonder.
     delay-ticks: 60
-    # Bundles applied per login; the rest wait, which also gives a reason to come back.
     max-bundles-per-join: 5
 
   tiers:
@@ -105,16 +55,14 @@ rewards:
         - { kind: ACTING_SPEED, weight: 10, min-value: 0.10, max-value: 0.20, duration-seconds: 1800 }
 
     winner:
-      rolls: 2
+      rolls: 1
       guaranteed:
-        - { kind: ACTING_PERCENT, min-percent: 1.5, max-percent: 3.0 }
+        - { kind: ACTING_PERCENT, min-percent: 1.0, max-percent: 2.0 }
       pool:
         - { kind: COOLDOWN_CREDIT, weight: 30, min-percent: 10, max-percent: 20 }
         - { kind: ACTING_SPEED, weight: 20, min-value: 0.25, max-value: 0.50, duration-seconds: 3600 }
         - { kind: ACTING_ITEM_MULT, weight: 10, min-value: 1.25, max-value: 1.50, duration-seconds: 3600 }
         - { kind: ITEM, weight: 15, item: ACTING_BOTTLE, min-percent: 1.5, max-percent: 2.5 }
-        # `small` is canonically 1.5x for 60 minutes, and the item's lore is a fixed string built
-        # from the tier name — so an off-spec value here would ship an item that lies about itself.
         - { kind: ITEM, weight: 10, item: ACTING_MULTIPLIER, tier: small, min-value: 1.5, max-value: 1.5, duration-seconds: 3600 }
         - { kind: ITEM, weight: 8, item: INGREDIENT_TOKEN }
         - { kind: ITEM, weight: 5, item: RECIPE_TOKEN }
@@ -123,20 +71,14 @@ rewards:
     mvp:
       enabled: true
       rolls: 1
-      # Score needed to be named MVP at all, so a quiet match awards nobody.
-      min-score: 3.0
+      min-score: 8.0
       score:
-        kill: 1.0
+        kill: 0.5
         final-kill: 3.0
         bed-break: 5.0
       guaranteed:
         - { kind: ACTING_PERCENT, min-percent: 1.0, max-percent: 2.0 }
       pool:
-        - { kind: ITEM, weight: 50, item: ACTING_BOTTLE, min-percent: 2.0, max-percent: 4.0 }
-        # `epic` lines get a title, a sound, and a server-wide announcement naming the winner.
-        # Both bypass a progression gate and sit outside every acting cap, so they are the only lines
-        # worth shouting about. Note the MVP tier is itself rare - it needs min-score and a single
-        # roll - but within it these are a coin flip, so roughly half of MVPs land one.
-        # Lower these weights (or raise mvp.min-score) if that feels too generous.
-        - { kind: ITEM, weight: 30, item: ANTI_CONTROL_CHARM, epic: true }
-        - { kind: ITEM, weight: 20, item: RITUAL_BOOK, amount: 1, epic: true }
+        - { kind: ITEM, weight: 70, item: ACTING_BOTTLE, min-percent: 2.0, max-percent: 4.0 }
+        - { kind: ITEM, weight: 18, item: ANTI_CONTROL_CHARM, epic: true }
+        - { kind: ITEM, weight: 12, item: RITUAL_BOOK, amount: 1, epic: true }

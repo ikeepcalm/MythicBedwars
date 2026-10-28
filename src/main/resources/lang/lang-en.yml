@@ -185,6 +185,7 @@ magic:
     pathway_already_disabled: "&ePathway {pathway} is already inactive."
   rewards:
     earned_header: "&5━━━ &dRewards Earned &5━━━"
+    performance: "&7Your play: &e{beds} &7beds, &e{finals} &7final kills, &e{kills} &7kills &8» &a+{percent}% &7Acting"
     earned_footer: "&8Applied automatically when you get back home."
     denied_afk: "&7You were away for most of the match — &cno rewards granted&7."
     denied_short: "&7You left too early — &cno rewards granted&7."

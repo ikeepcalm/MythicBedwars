@@ -92,8 +92,15 @@ gesture, and new Beyonders don't get something absurd.
 - A **Spirituality Potion**
 - An **Acting speed boost** for the next half hour
 
-**Winners** get roughly double the guaranteed Acting progress, and **two** bonus rolls instead of one —
-from a better pool:
+**How you played counts, win or lose.** Every bed you break, every final kill and every kill adds
+to a performance bonus on top of your Acting: a bed is worth the most, a final kill about half
+that, a regular kill very little. The bonus is capped, and you see the breakdown the moment the
+match ends. Break three beds for a team that comes second and you still go home with a real reward.
+
+If your next Acting method is already off cooldown, a cooldown reward is paid as Acting instead,
+in proportion to how big the cooldown cut was.
+
+**Winners** get extra guaranteed Acting progress and **one** bonus roll from a better pool:
 
 - A much larger cut off your next Acting method's cooldown
 - A stronger, longer Acting speed boost
@@ -105,7 +112,7 @@ from a better pool:
 - A **Universal Potion Token**
 
 **The match MVP** gets a third helping of Acting on top — but only if they earned it. You need a real
-contribution: **one bed break**, **one final kill**, or **three regular kills** as a minimum. Their
+contribution: at least **a bed break and a final kill**, **two bed breaks**, or **three final kills**. Their
 bonus roll can produce two things nothing else in an event will:
 
 - 🔮 **Anti-Control Charm**

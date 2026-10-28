@@ -53,7 +53,7 @@ network:
       check-seconds: 120
 ```
 
-Missing keys are **backfilled into the file on boot** (and on `/mb reload`), with their comments,
+Missing keys are **backfilled into the file on boot** (and on `/mb reload`),
 and keys this version retired (`auto-propose*`, `idle-threshold-seconds`) are removed. So an older
 `config.yml` picks up the schedule block by itself, and what is on disk stays the whole truth about
 what the plugin will do. The same applies to `rewards.yml`: a `min-participation-ratio` still sitting
@@ -276,6 +276,26 @@ bundle applying twice.
   `endVoting` would overwrite the pre-seeded "magic on".
 - **Start goes through MBedwars.** The countdown is handed back via `setLobbyTimeRemaining`, not
   `setStatus(RUNNING)`, so team balancing and spawns still happen.
+- **Nothing is announced before a host accepts,** and not at all with under 15s of signup window
+  left: an announcement followed a second later by "cancelled" is the spam the rule exists to stop.
+- **Signups close in Redis before the roster is read.** The signup script admits a click only while
+  the record reads `ANNOUNCED`; reading first would let a late clicker join the Redis roster but not
+  the roster sent to the host, and be refused after crossing the proxy.
+- **A reject never tears a proposal down** while another Bedwars server could still claim it; the
+  propose timeout is the authority on "nobody will host this".
+- **The arena is right-sized once, at roster close.** That is the first moment turnout is known and
+  the last moment nobody has been transferred.
+- **"Recorded" and "transferred" are tracked separately per event** in `EventReturnService`. A player
+  eliminated in the final seconds is recorded at round end while their own return offer is still
+  counting down; one shared set would cancel their ride home.
+- **Only rostered players are transferred.** A local who took a spare fill slot gets their outcome
+  recorded but stays on the Bedwars server.
+- **A remote cancel never ends a running match** (`RUNNING`/`END_LOBBY`): the host physically holds
+  the players, and dropping the reservation would strand them with no result or ride home.
+- **A finished reservation is released at `RESETTING`,** not only at `STOPPED`/unload: a non-cloned
+  arena goes `END_LOBBY → RESETTING → LOBBY` and never reaches `STOPPED`.
+- **`schedule.yml` is authoritative for the interval** after a restart, because the Redis window key
+  is lost on a Redis restart or flush. Set `last-offered-at: 0` to make an event due at the next check.
 
 ---
 
@@ -303,3 +323,35 @@ bundle applying twice.
 - **Arena selection is no longer deterministic across hosts.** Two Bedwars servers may pick
   different arenas for the same roster. Harmless — only one wins the host claim — but it does mean
   you cannot predict the map from the roster alone.
+
+---
+
+## Transport notes
+
+- **`RedisClient` never throws.** Reads return empty and writes return `false` when Redis is down, so
+  an outage pauses cross-server events and nothing else. Once a command fails the client marks itself
+  disconnected and short-circuits every call; only `probeIfDisconnected`, driven by the heartbeat,
+  brings it back.
+- **Error replies are split.** A `JedisDataException` for a malformed request (Lua error, `WRONGTYPE`)
+  is logged once and ignored; `LOADING`, `MISCONF`, `OOM`, `READONLY`, `NOAUTH` and similar mean the
+  server cannot serve us and count as an outage.
+- **The subscriber has its own connection,** outside the pool, and reconnects with a backoff that only
+  resets once a subscription genuinely came up, so an instant `NOAUTH` does not spin at 1 Hz.
+  Subscriptions must be registered before `start()`: the thread snapshots the channel list.
+- **Writes that pair a value with an expiry are Lua scripts** (`HSET_WITH_TTL`, `SADD_WITH_TTL`,
+  `LPUSH_WITH_TTL`): a connection lost between the write and the `EXPIRE` would leave a key that never
+  ages out. Signup is one script too, so the roster cap is exact across SMP nodes.
+- **`SCAN` is capped in iterations** as well as results, because this Redis is shared and a selective
+  pattern would otherwise walk the whole keyspace. Liveness is read from the `hbindex` set instead and
+  only falls back to a scan when the index is empty.
+- **`RedisBus` publishes off the main thread** when called from it, and returns `true` optimistically.
+  Handlers always run on the main thread. An unknown message type is dropped *before* its id enters
+  the dedup ring, so a message that arrives just before its handler is registered can still be
+  redelivered.
+- **A direct message with no `to` is not a broadcast.** Gson omits null fields; treating that as `*`
+  would let every server on the channel act on a message meant for one.
+- **Reaping trusts the peer list only when it contains this server.** A failed liveness read returns
+  an empty list, and without that check every healthy event would be reaped as `HOST_GONE`.
+- **Retired event hashes expire after two minutes rather than being deleted,** so a peer that missed
+  the cancellation still has a record to reconcile against. `EventSyncTask` only ever reconciles
+  towards giving up, and needs three empty reads in a row before it does.

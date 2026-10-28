@@ -35,13 +35,15 @@ ext.sqliteVersion = '3.49.1.0'
 dependencies {
     // Loaded reflectively from Plan's own classloader; never needs to be on our runtime classpath.
     compileOnly 'com.github.plan-player-analytics:Plan:5.6.2965'
-    compileOnly("io.papermc.paper:paper-api:26.1.2.build.+")
+    compileOnly("io.papermc.paper:paper-api:26.3.build.+")
     compileOnly 'de.marcely.bedwars:API:5.5.7'
     // Present at runtime via plugin.yml `libraries:`, not bundled - there is no shadow plugin here.
     compileOnly "redis.clients:jedis:${jedisVersion}"
     compileOnly "org.apache.commons:commons-pool2:${commonsPoolVersion}"
     compileOnly "org.xerial:sqlite-jdbc:${sqliteVersion}"
     compileOnly 'dev.ua.ikeepcalm:circle-of-imagination-api:1.4.9-SNAPSHOT'
+    compileOnly 'org.projectlombok:lombok:1.18.44'
+    annotationProcessor 'org.projectlombok:lombok:1.18.44'
 }
 
 tasks {
@@ -49,7 +51,7 @@ tasks {
         // Configure the Minecraft version for our task.
         // This is the only required configuration besides applying the plugin.
         // Your plugin's jar (or shadowJar if present) will be used automatically.
-        minecraftVersion("26.1.2")
+        minecraftVersion("26.3")
     }
 }
 

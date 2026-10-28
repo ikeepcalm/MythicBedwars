@@ -26,7 +26,7 @@ Practical rules when editing:
 - Anything reaching `de.marcely.bedwars` is constructed only inside `enableMinigameRole()`.
 - Role-neutral code asks the plugin class (`isEventArena`, `getReservedArenaNames`,
   `cancelHostedEvents`, `getEventParticipant`), which answers safely when the minigame half is absent.
-- Subcommand *names* live in `cmd/Subcommands.java`, deliberately apart from the class that
+- Subcommand *names* live in `command/admin/Subcommands.java`, deliberately apart from the class that
   implements them, so the router can recognise a Bedwars subcommand without loading it.
 - `network.enabled: false` leaves the role intact and simply skips the transport, so an existing
   single-server install behaves exactly as it always did.
@@ -35,18 +35,17 @@ Practical rules when editing:
 
 ## 🛠️ Build and Development Commands
 
-Gradle, targeting **Java 25**.
-
-> **Gradle 8.14 cannot run on a Java 25 JVM.** Point `JAVA_HOME` at a JDK 21 install; the
-> `toolchain` block still compiles against 25.
->
-> ```bash
-> export JAVA_HOME=/c/Program\ Files/Eclipse\ Adoptium/jdk-21.0.9.10-hotspot
-> ```
+Gradle 9.1 wrapper, **Java 25**, Paper API **26.3**. The wrapper runs on the installed JDK 25; no
+`JAVA_HOME` override is needed.
 
 - **Compile**: `./gradlew compileJava`
 - **Build the jar**: `./gradlew build`
 - **Run a local Paper server**: `./gradlew runServer`
+
+**Lombok** (`compileOnly` + `annotationProcessor`) generates getters, setters and constructors; the
+code follows the `java-style` house style (Lombok POJOs instead of records, near-zero comments,
+`domain/<feature>/{model,model/source,service,type,listener,task}`). Design reasoning lives in
+`docs/DESIGN_NOTES.md` and `docs/CROSS_SERVER_EVENTS.md`, not in source comments.
 
 There is **no shadow plugin**. Nothing is bundled into the jar: Jedis, commons-pool2 and sqlite-jdbc
 are resolved at runtime through `libraries:` in `plugin.yml`, and their versions are declared once in
@@ -60,66 +59,55 @@ Sources live under `src/main/java/dev/ua/ikeepcalm/bedwars/`.
 
 ```
 MythicBedwars
-├── cmd/
-│   ├── impls/
-│   │   ├── EventCommand.java        # /mb event ... (both roles)
-│   │   ├── PlayerCommand.java       # /bedwars - the player-facing half (both roles)
-│   │   ├── MinigameSubcommands.java # stats/arena/balance/pathways/voting - MBedwars-facing
-│   │   ├── SpectatorCommand.java    # spectator HUD and targeting
-│   │   ├── UnavailableCommand.java  # stub bound to minigame-only commands in the SMP role
-│   │   └── VotingDebugCommand.java  # voting diagnostics
-│   ├── CommandManager.java          # router; permissions are per subcommand, not on the command
-│   └── Subcommands.java             # role-neutral subcommand names and permission nodes
+├── MythicBedwars.java                # onEnable/onDisable, role split, reload, Lombok getters
+├── command/
+│   ├── admin/                        # /mb router (CommandManager), EventCommand (both roles),
+│   │                                 #   MinigameSubcommands + VotingDebugCommand (MBedwars-facing),
+│   │                                 #   Subcommands (role-neutral names/permissions),
+│   │                                 #   UnavailableCommand (stub for minigame-only commands on SMP)
+│   ├── player/PlayerCommand.java     # /bedwars - the player-facing half (both roles)
+│   └── spectator/SpectatorCommand.java
 ├── config/
-│   ├── ConfigBackfill.java          # writes new keys into config.yml, removes retired ones
-│   ├── LocaleBackfill.java          # merges new keys into the operator's lang-*.yml
-│   ├── ConfigLoader.java            # one getter per key, inline defaults
-│   ├── LocaleLoader.java            # EN + UK, resolved per recipient
-│   └── NetworkRole.java             # SMP | MINIGAME
+│   ├── ConfigLoader.java             # one getter per key, inline defaults
+│   ├── LocaleLoader.java             # EN + UK, resolved per recipient
+│   └── models/source/                # NetworkRole (SMP | MINIGAME), Language
 ├── domain/
-│   ├── balancer/PathwayBalancer.java
-│   ├── core/                        # PathwayManager, ShopManager, StatisticsManager,
-│   │                                #   MaterialGrantService, ArenaEnvironmentService
-│   ├── item/                        # PotionItemSession, PotionShopItem,
-│   │                                #   MaterialShopItem, MaterialKind, SandboxItems
-│   ├── reward/                      # the cross-server reward pipeline
-│   │   ├── model/RewardModel.java   # kinds, tiers, entries, grants, bundles
-│   │   ├── CoiCapabilities.java     # what the loaded COI can actually do
-│   │   ├── MatchContributionTracker.java
-│   │   ├── RewardConfig.java        # rewards.yml
-│   │   ├── RewardQueue.java         # Redis handoff, both idempotency guards
-│   │   ├── RewardRedeemer.java      # applies on the SMP
-│   │   ├── RewardRoller.java        # rolls tiers and token ceilings
-│   │   └── RewardService.java       # decides who earned what, at round end
-│   ├── runnable/                    # ActingProgressionTask, PathwayVerificationTask, VotingReminderTask
-│   ├── spectator/SpectatorManager.java
-│   ├── stats/db/                    # SQLiteDatabase, DatabaseMigration, PathwayStats
-│   └── voting/                      # MagicMode, VotingSession, VotingManager
-├── integration/PlanDataExtension.java   # loaded reflectively; Plan is optional
-├── listener/                        # Arena, Damage, Player, Spectator, Voting, ServerShutdown,
-│                                    #   ProjectileCooldown
+│   ├── arena/                        # ArenaListener, ProjectileCooldownListener, ArenaEnvironmentService
+│   ├── item/                         # ShopManager, MaterialGrantService, SandboxItems,
+│   │                                 #   type/ shop items and sessions, model/source/MaterialKind
+│   ├── pathway/                      # PathwayManager, PathwayBalancer, PlayerListener,
+│   │                                 #   ServerShutdownListener, ActingProgression/PathwayVerification tasks
+│   ├── reward/                       # the cross-server reward pipeline: CoiCapabilities, RewardConfig
+│   │                                 #   (rewards.yml), RewardService, RewardRoller, RewardQueue (Redis
+│   │                                 #   handoff, both idempotency guards), RewardRedeemer (SMP side)
+│   ├── spectator/                    # SpectatorManager, SpectatorListener, SpectatorData
+│   ├── stats/                        # SQLiteDatabase, DatabaseMigration, StatisticsManager,
+│   │                                 #   PlanDataExtension (loaded reflectively; Plan is optional)
+│   └── voting/                       # VotingManager, VotingSession, MagicMode, VotingReminderTask
 ├── net/
-│   ├── EventParticipant.java        # the local half of an event, role-neutrally
-│   ├── EventReaperTask.java         # sweeps events that stopped progressing
-│   ├── EventSyncTask.java           # reconciles local state against the durable record
-│   ├── NetworkService.java          # facade: client, bus, keys, heartbeat, registry
-│   ├── event/                       # EventRecord, EventStore  (the source of truth)
-│   ├── health/                      # HeartbeatTask, ServerRegistry
-│   ├── minigame/                    # host side: orchestrator, selector, reservation,
-│   │                                #   guard, listener, lobby hold, return service
-│   ├── protocol/                    # Envelope, Heartbeat, payloads, enums
-│   ├── smp/                         # recruit side: manager, announcer, signups, listener,
-│   │                                #   ReturnGreeter, ScheduleJournal (schedule.yml),
-│   │                                #   ScheduleAnnouncer (the player-facing countdown)
-│   ├── transport/                   # RedisClient/JedisRedisClient, RedisBus, RedisKeys, LuaScripts
+│   ├── service/NetworkService.java   # facade: client, bus, keys, heartbeat, registry
+│   ├── type/EventParticipant.java    # the local half of an event, role-neutrally
+│   ├── task/                         # EventReaperTask (stalled events), EventSyncTask (reconcile)
+│   ├── event/                        # EventRecord, EventStore (the source of truth)
+│   ├── health/                       # HeartbeatTask, ServerRegistry
+│   ├── minigame/                     # host side: orchestrator, selector, reservation, guard,
+│   │                                 #   listener, lobby hold, return service
+│   ├── protocol/                     # Envelope, Heartbeat, payloads (model/), enums (source/)
+│   ├── smp/                          # recruit side: manager, announcer, signups, listener,
+│   │                                 #   ReturnGreeter, ScheduleJournal (schedule.yml),
+│   │                                 #   ScheduleAnnouncer (the player-facing countdown)
+│   ├── transport/                    # RedisClient, RedisBus, RedisKeys, LuaScripts
 │   └── velocity/ServerTransferService.java
-└── MythicBedwars.java               # onEnable/onDisable, role split
+└── util/
+    ├── command/Completions.java      # tab-completion prefix filter
+    └── config/                       # ConfigBackfiller (config.yml), LocaleBackfiller (lang-*.yml)
 ```
 
-Resources: `config.yml`, `rewards.yml`, `plugin.yml`, `lang/lang-en.yml`, `lang/lang-uk.yml`.
+Resources: `config.yml`, `rewards.yml`, `plugin.yml`, `lang/lang-en.yml`, `lang/lang-uk.yml`. YAML
+carries no comment blocks, at most a one-line unit hint.
 `schedule.yml` is written at runtime, not bundled: it is the SMP's record of when the last event
 went out, so `network.event.schedule` survives a restart of the server or of Redis.
-Feature documentation lives in `docs/CROSS_SERVER_EVENTS.md`.
+Feature documentation lives in `docs/CROSS_SERVER_EVENTS.md`, design notes in `docs/DESIGN_NOTES.md`.
 
 ---
 
@@ -140,7 +128,7 @@ is checked per subcommand.
 | `event cancel` | both | admin |
 | `event send <player> <smp\|minigame\|server>` | both | admin |
 | `toggle` | both | admin |
-| `reload` | both | admin — config, locales **and** `rewards.yml` |
+| `reload` | both | admin — config, locales **and** `rewards.yml`; re-arms interval tasks |
 | `stats`, `arena`, `balance`, `pathways`, `voting` | MINIGAME | admin |
 
 `mythicbedwars.event.exempt` (default false) opts the holder out of recruitment broadcasts.
@@ -202,13 +190,13 @@ Consequences worth knowing:
 
 ## 🎨 Coding Guidelines
 
-1. **Java 25** target. See the `JAVA_HOME` note above.
+1. **Java 25**, Paper **26.3**, Lombok. Follow the `java-style` house style.
 2. **Kyori Adventure** for all chat, bossbars and titles. Never hardcode `§`; legacy `&` codes belong
    only in the locale files, which `LocaleLoader` deserializes with `legacyAmpersand()`. A
    MiniMessage tag in a locale string renders **literally**.
-3. **Locale strings use flat `{name}` placeholders.** Prefer the `CommandSender` overloads
-   (`formatMessage(player, key, …)`) so the recipient's own language is used — the plain overloads
-   always resolve to EN.
+3. **Locale strings use flat `{name}` placeholders.** Use the `CommandSender` overloads
+   (`formatMessage(sender, key, …)`) whenever the recipient is known — the plain overloads always
+   resolve to EN.
 4. **Database work is async** via `CompletableFuture`, except in `onDisable`, where synchronous saves
    guarantee persistence.
 5. **Thread safety.** `PathwayManager`, `SpectatorManager` and everything under `net/` are touched
@@ -216,16 +204,22 @@ Consequences worth knowing:
    `volatile`.
 6. **Redis is never touched on the main thread.** `RedisBus` hops handlers *to* the main thread for
    Bukkit safety, which makes it easy to accidentally do blocking I/O there — push every round trip
-   back out with `runTaskAsynchronously`.
+   back out with `plugin.offMainThread` (which runs inline during `onDisable`, when the scheduler
+   refuses new tasks).
 7. **A server cannot message itself.** The bus dedups its own outgoing message ids, so publishing to
    your own role's channel is a no-op locally. Inform the local half through `EventParticipant`.
-8. **Dependencies**
+8. **`MythicBedwars`' public getters are generated by Lombok** from field names
+   (`configManager` -> `getConfigManager`, `localeManager`, `arenaPathwayManager`); renaming a field
+   renames the getter every other class calls.
+9. **Dependencies**
+   - Paper API `26.3` (`api-version: '26.3'`).
    - `MBedwars` 5.5.5+ — `softdepend`; runtime-gated in `checkMBedwarsSupported()`. Compiles against
      the 5.5.7 API.
-   - `CircleOfImagination` 1.4.8-SNAPSHOT — `depend`. Newer additions are probed at runtime by
+   - `CircleOfImagination` 1.4.9-SNAPSHOT API — `depend`. Newer additions are probed at runtime by
      `CoiCapabilities`; never name a newly added enum constant as a compile-time constant.
    - `Plan` — optional, reached reflectively in `registerPlanStatistics`.
    - `Jedis` / `commons-pool2` / `sqlite-jdbc` — runtime-only via `libraries:`.
+   - `Lombok` 1.18.44 — compile-time only.
 
 ---
 
