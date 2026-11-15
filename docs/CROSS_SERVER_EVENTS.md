@@ -268,9 +268,9 @@ bundle applying twice.
 - **Rewards carry percentages, never amounts.** On the Bedwars server a player is a synthetic
   Sequence-9 Beyonder, so any number computed there would be meaningless. The SMP resolves the
   percentage against their real bar.
-- **No grant names a pathway.** `grantActing` silently returns 0 for a pathway the player does not
+- **No grant names a pathway.** `acting().grant` refuses a pathway the player does not
   hold, so everything resolves against their real primary pathway.
-- **Match loadouts are virtual.** `PathwayManager` uses COI's `enterVirtualBeyonder`, which stashes
+- **Match loadouts are virtual.** `PathwayManager` uses COI's `beyonders().enterVirtual`, which stashes
   the real Beyonder instead of deleting it. Nothing the match does can reach persisted progression.
 - **Event arenas never vote.** Three guards ensure no `VotingSession` is created, because
   `endVoting` would overwrite the pre-seeded "magic on".

@@ -6,9 +6,9 @@ import de.marcely.bedwars.api.arena.ArenaStatus;
 import de.marcely.bedwars.api.arena.Team;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.domain.pathway.model.PlayerMagicData;
-import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
-import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
-import dev.ua.ikeepcalm.coi.api.model.PathwayData;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationApi;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderView;
+import dev.ua.ikeepcalm.coi.api.model.PathwayView;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -16,11 +16,11 @@ import org.bukkit.scheduler.BukkitRunnable;
 public class ActingProgressionTask extends BukkitRunnable {
 
     private final MythicBedwars plugin;
-    private final CircleOfImaginationAPI circleOfImaginationAPI;
+    private final CircleOfImaginationApi circleOfImaginationAPI;
 
     public ActingProgressionTask(MythicBedwars plugin) {
         this.plugin = plugin;
-        this.circleOfImaginationAPI = plugin.getCircleOfImaginationAPI();
+        this.circleOfImaginationAPI = plugin.getCircleOfImaginationApi();
     }
 
     @Override
@@ -42,16 +42,16 @@ public class ActingProgressionTask extends BukkitRunnable {
 
     private void progress(Player player, Arena arena) {
         PlayerMagicData data = plugin.getArenaPathwayManager().getPlayerData(player);
-        if (data == null || !data.isActive() || !circleOfImaginationAPI.isVirtualBeyonder(player)) {
+        if (data == null || !data.isActive() || !circleOfImaginationAPI.beyonders().isVirtual(player.getUniqueId())) {
             return;
         }
 
-        BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(player);
-        if (beyonderData == null || beyonderData.pathways().isEmpty()) {
+        BeyonderView beyonderData = circleOfImaginationAPI.beyonders().find(player.getUniqueId()).orElse(null);
+        if (beyonderData == null || beyonderData.getOwnedPathways().isEmpty()) {
             return;
         }
 
-        int sequence = beyonderData.lowestSequence();
+        int sequence = beyonderData.getLowestSequence();
         int previousSequence = data.getCurrentSequence();
         if (sequence != previousSequence) {
             data.setCurrentSequence(sequence);
@@ -66,11 +66,11 @@ public class ActingProgressionTask extends BukkitRunnable {
         double timeBasedMultiplier = getTimeBasedMultiplier(data.getEffectivePlayTime(), sequence);
         int actingAmount = (int) (baseAmount * multiplier * sequenceMultiplier * timeBasedMultiplier);
 
-        for (PathwayData pathway : beyonderData.pathways()) {
-            circleOfImaginationAPI.addActing(player, pathway.name(), actingAmount);
-            if (circleOfImaginationAPI.getPrimaryActing(player) % 2000 == 0) {
-                player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
-            }
+        PathwayView primary = beyonderData.getOwnedPathways().getFirst();
+        int acting = Math.min(primary.getRequired(), primary.getActing() + actingAmount);
+        circleOfImaginationAPI.beyonders().setVirtualActing(player.getUniqueId(), acting);
+        if (acting % 2000 == 0) {
+            player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.0f);
         }
     }
 

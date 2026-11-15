@@ -48,7 +48,7 @@ import dev.ua.ikeepcalm.bedwars.net.task.EventReaperTask;
 import dev.ua.ikeepcalm.bedwars.net.task.EventSyncTask;
 import dev.ua.ikeepcalm.bedwars.net.type.EventParticipant;
 import dev.ua.ikeepcalm.bedwars.net.velocity.ServerTransferService;
-import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationApi;
 import lombok.Getter;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -105,7 +105,7 @@ public class MythicBedwars extends JavaPlugin {
     private boolean planEnableListenerRegistered;
 
     @Getter
-    private CircleOfImaginationAPI circleOfImaginationAPI;
+    private CircleOfImaginationApi circleOfImaginationApi;
     @Getter
     private CoiCapabilities coiCapabilities;
     @Getter
@@ -141,10 +141,10 @@ public class MythicBedwars extends JavaPlugin {
                     configManager.getRawNetworkRole(), networkRole);
         }
 
-        circleOfImaginationAPI = Bukkit.getPluginManager().isPluginEnabled("CircleOfImagination")
-                ? Bukkit.getServicesManager().load(CircleOfImaginationAPI.class)
+        circleOfImaginationApi = Bukkit.getPluginManager().isPluginEnabled("CircleOfImagination")
+                ? Bukkit.getServicesManager().load(CircleOfImaginationApi.class)
                 : null;
-        if (circleOfImaginationAPI == null) {
+        if (circleOfImaginationApi == null) {
             log("CircleOfImagination not found, disabling.");
             getServer().getPluginManager().disablePlugin(this);
             return;
@@ -182,7 +182,7 @@ public class MythicBedwars extends JavaPlugin {
 
     private void loadRewards() {
         rewardConfig.load();
-        coiCapabilities = CoiCapabilities.probe(circleOfImaginationAPI, rewardConfig.actingSourceName());
+        coiCapabilities = CoiCapabilities.probe(circleOfImaginationApi);
         if (coiCapabilities.isDegraded()) {
             log("Running against an older CircleOfImagination ({}) - event rewards will be substituted where unsupported.",
                     coiCapabilities.describe());

@@ -17,9 +17,9 @@ import dev.ua.ikeepcalm.bedwars.config.LocaleLoader;
 import dev.ua.ikeepcalm.bedwars.domain.item.service.MaterialGrantService;
 import dev.ua.ikeepcalm.bedwars.domain.item.service.SandboxItems;
 import dev.ua.ikeepcalm.bedwars.domain.pathway.model.PlayerMagicData;
-import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
-import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
-import dev.ua.ikeepcalm.coi.api.model.PathwayData;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationApi;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderView;
+import dev.ua.ikeepcalm.coi.api.model.PathwayView;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -33,12 +33,12 @@ import java.util.concurrent.ThreadLocalRandom;
 public class ArenaListener implements Listener {
 
     private final MythicBedwars plugin;
-    private final CircleOfImaginationAPI circleOfImaginationAPI;
+    private final CircleOfImaginationApi circleOfImaginationAPI;
     private final Map<String, Long> arenaStartTimes = new HashMap<>();
 
     public ArenaListener(MythicBedwars plugin) {
         this.plugin = plugin;
-        this.circleOfImaginationAPI = plugin.getCircleOfImaginationAPI();
+        this.circleOfImaginationAPI = plugin.getCircleOfImaginationApi();
     }
 
     @EventHandler
@@ -132,19 +132,19 @@ public class ArenaListener implements Listener {
             return;
         }
 
-        BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(player);
-        if (beyonderData == null || beyonderData.pathways().isEmpty()) {
+        BeyonderView beyonderData = circleOfImaginationAPI.beyonders().find(player.getUniqueId()).orElse(null);
+        if (beyonderData == null || beyonderData.getOwnedPathways().isEmpty()) {
             return;
         }
 
-        PathwayData primary = beyonderData.pathways().getFirst();
-        int neededActing = primary.neededActing();
-        double actingPercent = neededActing > 0 ? (double) primary.acting() / neededActing * 100 : 0;
+        PathwayView primary = beyonderData.getOwnedPathways().getFirst();
+        int neededActing = primary.getRequired();
+        double actingPercent = neededActing > 0 ? (double) primary.getActing() / neededActing * 100 : 0;
 
         LocaleLoader locale = plugin.getLocaleManager();
         player.sendMessage(locale.formatMessage(player, "magic.summary.header"));
         player.sendMessage(locale.formatMessage(player, "magic.summary.pathway", "pathway", data.getPathway()));
-        player.sendMessage(locale.formatMessage(player, "magic.summary.sequence", "sequence", primary.lowestSequenceLevel()));
+        player.sendMessage(locale.formatMessage(player, "magic.summary.sequence", "sequence", primary.getSequence()));
         player.sendMessage(locale.formatMessage(player, "magic.summary.acting", "percent", String.format("%.1f", actingPercent)));
         if (winner != null && winner.equals(arena.getPlayerTeam(player))) {
             player.sendMessage(locale.formatMessage(player, "magic.summary.victory"));
@@ -233,31 +233,35 @@ public class ArenaListener implements Listener {
     }
 
     private void grantActing(Player player, double multiplier) {
-        if (!circleOfImaginationAPI.isVirtualBeyonder(player)) {
+        if (!circleOfImaginationAPI.beyonders().isVirtual(player.getUniqueId())) {
+            return;
+        }
+
+        BeyonderView beyonderData = circleOfImaginationAPI.beyonders().find(player.getUniqueId()).orElse(null);
+        if (beyonderData == null || beyonderData.getOwnedPathways().isEmpty()) {
             return;
         }
 
         int actingAmount = (int) (100 * multiplier);
-        for (PathwayData pathway : circleOfImaginationAPI.getPathwayData(player)) {
-            circleOfImaginationAPI.addActing(player, pathway.name(), actingAmount);
-        }
+        int current = beyonderData.getOwnedPathways().getFirst().getActing();
+        circleOfImaginationAPI.beyonders().setVirtualActing(player.getUniqueId(), current + actingAmount);
     }
 
     private void applyDeathPenalty(Player victim) {
         double penaltyFraction = plugin.getConfigManager().getDeathActingPenalty();
-        if (victim == null || penaltyFraction <= 0 || !circleOfImaginationAPI.isVirtualBeyonder(victim)) {
+        if (victim == null || penaltyFraction <= 0 || !circleOfImaginationAPI.beyonders().isVirtual(victim.getUniqueId())) {
             return;
         }
 
-        BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(victim);
-        if (beyonderData == null || beyonderData.pathways().isEmpty()) {
+        BeyonderView beyonderData = circleOfImaginationAPI.beyonders().find(victim.getUniqueId()).orElse(null);
+        if (beyonderData == null || beyonderData.getOwnedPathways().isEmpty()) {
             return;
         }
 
-        int currentActing = beyonderData.pathways().getFirst().acting();
+        int currentActing = beyonderData.getOwnedPathways().getFirst().getActing();
         int penalty = (int) (currentActing * penaltyFraction);
         if (penalty > 0) {
-            circleOfImaginationAPI.setPrimaryActing(victim, Math.max(0, currentActing - penalty));
+            circleOfImaginationAPI.beyonders().setVirtualActing(victim.getUniqueId(), Math.max(0, currentActing - penalty));
             victim.sendMessage(plugin.getLocaleManager().formatMessage(victim, "magic.messages.death_penalty", "amount", penalty));
         }
     }
@@ -290,11 +294,11 @@ public class ArenaListener implements Listener {
     }
 
     private int victimSequence(Player victim) {
-        BeyonderData data = victim == null ? null : circleOfImaginationAPI.getBeyonderData(victim);
-        if (data == null || data.pathways().isEmpty()) {
+        BeyonderView data = victim == null ? null : circleOfImaginationAPI.beyonders().find(victim.getUniqueId()).orElse(null);
+        if (data == null || data.getOwnedPathways().isEmpty()) {
             return 9;
         }
-        return data.lowestSequence();
+        return data.getLowestSequence();
     }
 
     @EventHandler

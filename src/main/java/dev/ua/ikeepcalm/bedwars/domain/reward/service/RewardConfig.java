@@ -262,10 +262,6 @@ public class RewardConfig {
         return config.getInt("rewards.max-queued-bundles", 10);
     }
 
-    public String actingSourceName() {
-        return config.getString("rewards.acting-source", "EVENT");
-    }
-
     public int dailyDowngradeThreshold() {
         return config.getInt("rewards.max-bundles-per-day", 8);
     }

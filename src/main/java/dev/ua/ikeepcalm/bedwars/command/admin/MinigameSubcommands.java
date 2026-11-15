@@ -65,7 +65,7 @@ public class MinigameSubcommands {
         if (args.length == 3) {
             return switch (subcommand) {
                 case "arena" -> Completions.matching(TOGGLES, args[2]);
-                case "pathways" -> Completions.matching(plugin.getCircleOfImaginationAPI().getAllPathwayNames(), args[2]);
+                case "pathways" -> Completions.matching(plugin.getCircleOfImaginationApi().progression().pathways(), args[2]);
                 default -> List.of();
             };
         }

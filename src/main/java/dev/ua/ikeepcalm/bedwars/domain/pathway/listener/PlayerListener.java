@@ -6,7 +6,7 @@ import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.domain.pathway.model.PlayerMagicData;
 import dev.ua.ikeepcalm.coi.api.event.AbilityUsageEvent;
 import dev.ua.ikeepcalm.coi.api.event.MagicBlockEvent;
-import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderView;
 import org.bukkit.GameMode;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
@@ -74,9 +74,9 @@ public class PlayerListener implements Listener {
             return;
         }
 
-        BeyonderData beyonderData = plugin.getCircleOfImaginationAPI().getBeyonderData(player);
-        if (beyonderData != null && !beyonderData.pathways().isEmpty()
-            && !beyonderData.pathways().getFirst().name().equals(data.getPathway())) {
+        BeyonderView beyonderData = plugin.getCircleOfImaginationApi().beyonders().find(player.getUniqueId()).orElse(null);
+        if (beyonderData != null && !beyonderData.getOwnedPathways().isEmpty()
+            && !beyonderData.getOwnedPathways().getFirst().getKey().equals(data.getPathway())) {
             event.setCancelled(true);
         }
     }

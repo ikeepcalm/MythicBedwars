@@ -2,11 +2,11 @@
 ## Rewards
 
 - A `RewardGrant` carries intent, never a resolved amount or a pathway. Percentages are sized on the SMP
-  against the player's real bar (the Bedwars loadout is a throwaway Sequence 9), and `grantActing`
-  returns 0 for a pathway the player does not hold, so everything resolves against their primary one.
+  against the player's real bar (the Bedwars loadout is a throwaway Sequence 9), and `acting().grant`
+  answers `UNKNOWN_PATHWAY` for a pathway the player does not hold, so everything resolves against their primary one.
 - `RewardBundle` is Gson-serialised into Redis: its field names are the wire format. Bump
   `RewardBundle.SCHEMA` on an incompatible change; unknown schemas go to the dead-letter list.
-- Apply order is `RewardKind#applyOrder`: acting before buffs (`grantActing` reads the live multipliers
+- Apply order is `RewardKind#applyOrder`: acting before buffs (`acting().grant` reads the live multipliers
   and would inflate the grant rolled alongside them), items last (a full inventory is the only retry).
 - Idempotency: emit is guarded by a per-event granted set (Lua, atomic with the push), apply by a
   per-player-per-event claim key. Giving a bundle back deletes the claim and pushes in one script, so a
@@ -16,8 +16,8 @@
 - Overflowing items are requeued under `<eventId>:overflow` so the claim guard does not reject them.
 - Exchange token ceilings are rolled on the Bedwars server (no reroll by reconnecting). Lower is
   stronger; a ceiling outside 1-9 (legacy bundles decode as 0) is treated as 9.
-- Never name `ActingSourceCategory.EVENT` directly: it is resolved by name in `CoiCapabilities` so an
-  older COI jar degrades to `PLAYER_INTERACTION` instead of failing at class load.
+- Acting rewards are granted under the ledger source `bedwars:event-reward`, declared in COI's
+  `reward-ledger.yml`; the receipt key is `<eventId>/<n>`, so a replayed bundle answers `DUPLICATE`.
 - The AFK ratio's denominator is samples taken while in play, not match length, so early elimination
   costs nothing. Any of movement, rotation, recent client input or a recent action counts as active.
 - Personal performance is paid to everyone, winners and losers alike: the MVP score (bed 5, final 3,

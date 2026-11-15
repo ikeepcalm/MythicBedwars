@@ -8,8 +8,8 @@ import de.marcely.bedwars.api.game.spectator.Spectator;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.config.LocaleLoader;
 import dev.ua.ikeepcalm.bedwars.domain.spectator.model.SpectatorData;
-import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
-import dev.ua.ikeepcalm.coi.api.model.PathwayData;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderView;
+import dev.ua.ikeepcalm.coi.api.model.PathwayView;
 import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -140,12 +140,12 @@ public class SpectatorManager {
         String pathway = plugin.getArenaPathwayManager().getTeamPathwayDisplay(arena, team);
         if (pathway == null) return;
 
-        List<PathwayData> primaries = arena.getPlayers().stream()
+        List<PathwayView> primaries = arena.getPlayers().stream()
                 .filter(player -> team.equals(arena.getPlayerTeam(player)))
                 .map(this::primaryPathway)
                 .filter(Objects::nonNull)
                 .toList();
-        double avgSequence = primaries.stream().mapToInt(PathwayData::lowestSequenceLevel).average().orElse(9.0);
+        double avgSequence = primaries.stream().mapToInt(PathwayView::getSequence).average().orElse(9.0);
         double avgActingPercent = primaries.stream().mapToDouble(this::actingPercent).average().orElse(0.0);
 
         BossBar bossBar = spectatorBossBars.get(spectator.getUniqueId());
@@ -172,7 +172,7 @@ public class SpectatorManager {
     }
 
     private Component playerStatus(Player player, Arena arena) {
-        PathwayData primary = primaryPathway(player);
+        PathwayView primary = primaryPathway(player);
         if (primary == null) {
             return Component.text(player.getName(), NamedTextColor.WHITE)
                     .append(Component.text(" - No magical data", NamedTextColor.GRAY));
@@ -180,7 +180,7 @@ public class SpectatorManager {
 
         String pathway = plugin.getArenaPathwayManager().getPlayerPathway(player);
         Team team = arena.getPlayerTeam(player);
-        int sequence = primary.lowestSequenceLevel();
+        int sequence = primary.getSequence();
         double actingPercent = actingPercent(primary);
 
         return Component.text(player.getName(), team != null ? teamColor(team) : NamedTextColor.WHITE)
@@ -208,28 +208,28 @@ public class SpectatorManager {
         spectator.sendMessage(locale.formatMessage(spectator, "magic.spectator.pathway").append(Component.space())
                 .append(Component.text(pathway != null ? pathway : "Unknown", NamedTextColor.LIGHT_PURPLE)));
 
-        PathwayData primary = primaryPathway(target);
+        PathwayView primary = primaryPathway(target);
         if (primary == null) {
             spectator.sendMessage(locale.formatMessage(spectator, "magic.spectator.no_magic_data"));
             return;
         }
 
-        int sequence = primary.lowestSequenceLevel();
+        int sequence = primary.getSequence();
         double actingPercent = actingPercent(primary);
         spectator.sendMessage(locale.formatMessage(spectator, "magic.spectator.current_sequence").append(Component.space())
                 .append(Component.text(String.valueOf(sequence), sequenceColor(sequence))));
         spectator.sendMessage(locale.formatMessage(spectator, "magic.spectator.acting").append(Component.space())
-                .append(Component.text(primary.acting() + "/" + primary.neededActing(), NamedTextColor.GREEN))
+                .append(Component.text(primary.getActing() + "/" + primary.getRequired(), NamedTextColor.GREEN))
                 .append(Component.text(" (" + String.format("%.1f%%", actingPercent) + ")", actingColor(actingPercent))));
     }
 
-    private PathwayData primaryPathway(Player player) {
-        BeyonderData data = plugin.getCircleOfImaginationAPI().getBeyonderData(player);
-        return data == null || data.pathways().isEmpty() ? null : data.pathways().getFirst();
+    private PathwayView primaryPathway(Player player) {
+        BeyonderView data = plugin.getCircleOfImaginationApi().beyonders().find(player.getUniqueId()).orElse(null);
+        return data == null || data.getOwnedPathways().isEmpty() ? null : data.getOwnedPathways().getFirst();
     }
 
-    private double actingPercent(PathwayData pathway) {
-        return pathway.neededActing() > 0 ? (double) pathway.acting() / pathway.neededActing() * 100.0 : 0.0;
+    private double actingPercent(PathwayView pathway) {
+        return pathway.getRequired() > 0 ? (double) pathway.getActing() / pathway.getRequired() * 100.0 : 0.0;
     }
 
     private Player findNearestPlayer(Player spectator, Arena arena) {

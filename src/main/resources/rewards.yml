@@ -6,8 +6,6 @@ rewards:
   max-bundles-per-day: 8
   max-bundles-per-day-hard: 16
 
-  acting-source: EVENT
-
   non-beyonder-policy: SUBSTITUTE
   fallback-bottle-acting: 300
   cooldown-substitute-percent: 2.0

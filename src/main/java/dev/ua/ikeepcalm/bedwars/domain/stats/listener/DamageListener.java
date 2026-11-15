@@ -20,7 +20,7 @@ public class DamageListener implements Listener {
         if (!(event.getDamager() instanceof Player damager)) return;
 
         String pathway = arenaPathway(damager);
-        if (pathway != null && plugin.getCircleOfImaginationAPI().getBeyonderData(damager) != null) {
+        if (pathway != null && plugin.getCircleOfImaginationApi().beyonders().find(damager.getUniqueId()).orElse(null) != null) {
             plugin.getStatisticsManager().recordDamageDealt(pathway, event.getFinalDamage());
         }
     }

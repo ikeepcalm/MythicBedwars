@@ -7,8 +7,11 @@ import dev.ua.ikeepcalm.bedwars.domain.reward.model.RewardGrant;
 import dev.ua.ikeepcalm.bedwars.domain.reward.model.source.ClaimOutcome;
 import dev.ua.ikeepcalm.bedwars.domain.reward.model.source.RewardItemKind;
 import dev.ua.ikeepcalm.bedwars.domain.reward.model.source.RewardKind;
-import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
-import dev.ua.ikeepcalm.coi.api.model.PathwayData;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationApi;
+import dev.ua.ikeepcalm.coi.api.model.ActingGrantRequest;
+import dev.ua.ikeepcalm.coi.api.model.ActingGrantResult;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderView;
+import dev.ua.ikeepcalm.coi.api.model.PathwayView;
 import lombok.RequiredArgsConstructor;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
@@ -23,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @RequiredArgsConstructor
 public class RewardRedeemer {
@@ -122,7 +126,7 @@ public class RewardRedeemer {
     }
 
     private void apply(Player player, RewardBundle bundle, List<RewardBundle> giveBack) {
-        CircleOfImaginationAPI api = plugin.getCircleOfImaginationAPI();
+        CircleOfImaginationApi api = plugin.getCircleOfImaginationApi();
         String pathway = primaryPathway(api, player);
         boolean beyonder = pathway != null;
 
@@ -132,8 +136,8 @@ public class RewardRedeemer {
             return;
         }
 
-        int needed = beyonder ? api.getActingRequiredForNextSequence(player, pathway) : 0;
-        Redemption redemption = new Redemption(api, plugin.getCoiCapabilities(), player, pathway, needed);
+        int needed = beyonder ? api.progression().actingRequiredForNext(player.getUniqueId(), pathway).orElse(0) : 0;
+        Redemption redemption = new Redemption(api, plugin.getCoiCapabilities(), player, pathway, needed, bundle.getEventId());
 
         List<RewardGrant> ordered = new ArrayList<>(bundle.getGrants());
         ordered.sort(APPLY_ORDER);
@@ -201,12 +205,19 @@ public class RewardRedeemer {
             return;
         }
 
-        int points = (int) Math.round(r.needed * percentOfBar / 100.0);
-        if (points <= 0) {
+        if (Math.round(r.needed * percentOfBar / 100.0) <= 0) {
             return;
         }
 
-        int granted = r.api.grantActing(player, r.pathway, r.capabilities.getRewardSource(), points);
+        ActingGrantResult result = r.api.acting().grant(ActingGrantRequest.builder()
+                .player(player.getUniqueId())
+                .pathway(r.pathway)
+                .sourceId(CoiCapabilities.REWARD_SOURCE)
+                .unit(ActingGrantRequest.Unit.PERCENT)
+                .amount(percentOfBar)
+                .receiptKey(r.nextReceipt())
+                .build());
+        int granted = result.getBarPoints();
         if (granted <= 0) {
             r.summary.add(message(player, "magic.redeem.acting_capped"));
             return;
@@ -215,65 +226,66 @@ public class RewardRedeemer {
         r.summary.add(message(player, "magic.redeem.acting_granted",
                 "amount", number(granted),
                 "percent", percent(granted * 100.0 / r.needed),
-                "sequence", r.api.getLowestSequence(player)));
+                "sequence", r.api.beyonders().find(player.getUniqueId()).map(BeyonderView::getLowestSequence).orElse(9)));
     }
 
     private void applyCooldown(Redemption r, RewardGrant grant) {
         Player player = r.player;
-        String methodId = r.api.getActingMethodId(player, r.pathway);
+        UUID playerId = player.getUniqueId();
+        String methodId = r.api.acting().methodId(playerId, r.pathway).orElse(null);
         if (methodId == null) {
             r.summary.add(message(player, "magic.redeem.acting_not_applicable"));
             return;
         }
 
-        long seconds = Math.round(r.api.getActingMethodCooldownSeconds(methodId) * grant.getAmount() / 100.0);
+        long seconds = Math.round(r.api.acting().methodCooldownSeconds(methodId) * grant.getAmount() / 100.0);
         if (seconds <= 0) {
             return;
         }
 
-        long credited = r.api.creditActingCooldown(player, methodId, seconds);
+        long credited = r.api.acting().creditCooldown(playerId, methodId, seconds);
         if (credited <= 0) {
             r.summary.add(message(player, "magic.redeem.cooldown_ready"));
             applyActing(r, cooldownFallbackPercent(grant));
             return;
         }
 
-        long remaining = r.api.getActingCooldownRemaining(player.getUniqueId(), methodId);
+        long remaining = r.api.acting().cooldownRemaining(playerId, methodId);
         r.summary.add(message(player, "magic.redeem.cooldown_credited",
                 "credited", formatDuration((int) credited),
                 "remaining", formatDuration((int) Math.max(0, remaining))));
     }
 
     private void applySpeed(Redemption r, RewardGrant grant) {
-        if (r.api.getActingSpeedMultiplier(r.player) >= grant.getAmount()) {
+        if (r.api.acting().speedBoost(r.player.getUniqueId(), CoiCapabilities.SPEED_BOOST_KEY) >= grant.getAmount()) {
             r.summary.add(message(r.player, "magic.redeem.buff_kept"));
             return;
         }
 
-        r.api.setActingSpeedMultiplier(r.player, grant.getAmount(), grant.getIntArg() * 1000L);
+        r.api.acting().setSpeedBoost(r.player.getUniqueId(), CoiCapabilities.SPEED_BOOST_KEY, grant.getAmount(), grant.getIntArg() * 1000L);
         r.summary.add(message(r.player, "magic.redeem.speed_applied",
                 "percent", Math.round(grant.getAmount() * 100),
                 "duration", formatDuration(grant.getIntArg())));
     }
 
     private void applyItemMultiplier(Redemption r, RewardGrant grant) {
-        if (r.api.getActingItemMultiplier(r.player) >= grant.getAmount()) {
+        if (r.api.acting().itemMultiplier(r.player.getUniqueId()) >= grant.getAmount()) {
             r.summary.add(message(r.player, "magic.redeem.buff_kept"));
             return;
         }
 
-        r.api.setActingItemMultiplier(r.player, grant.getAmount(), grant.getIntArg() * 1000L);
+        r.api.acting().setItemMultiplier(r.player.getUniqueId(), grant.getAmount(), grant.getIntArg() * 1000L);
         r.summary.add(message(r.player, "magic.redeem.item_mult_applied",
                 "multiplier", multiplier(grant.getAmount()),
                 "duration", formatDuration(grant.getIntArg())));
     }
 
-    private String primaryPathway(CircleOfImaginationAPI api, Player player) {
-        if (!api.isBeyonder(player)) {
+    private String primaryPathway(CircleOfImaginationApi api, Player player) {
+        if (!api.beyonders().isBeyonder(player.getUniqueId())) {
             return null;
         }
-        List<PathwayData> pathways = api.getPathwayData(player);
-        return pathways.isEmpty() ? null : pathways.getFirst().name();
+        List<PathwayView> pathways = api.beyonders().find(player.getUniqueId()).map(BeyonderView::getOwnedPathways).orElse(List.of());
+        return pathways.isEmpty() ? null : pathways.getFirst().getKey();
     }
 
     private void substitute(Redemption r, RewardGrant grant) {
@@ -284,7 +296,7 @@ public class RewardRedeemer {
         };
 
         int acting = (int) Math.round(config.fallbackBottleActing() * share / 2.0);
-        ItemStack bottle = r.api.createActingBottle(Math.max(1, acting));
+        ItemStack bottle = item(r.api, "acting-bottle?amount=" + Math.max(1, acting));
         if (bottle != null) {
             r.addItem(bottle, grant);
         }
@@ -294,7 +306,7 @@ public class RewardRedeemer {
         return Math.min(config.cooldownSubstitutePercent(), grant.getAmount() * config.cooldownSubstituteRatio());
     }
 
-    private Optional<ItemStack> buildItem(CircleOfImaginationAPI api, int needed, RewardGrant grant) {
+    private Optional<ItemStack> buildItem(CircleOfImaginationApi api, int needed, RewardGrant grant) {
         RewardItemKind kind = grant.getItem();
         if (kind == null) {
             return Optional.empty();
@@ -304,25 +316,34 @@ public class RewardRedeemer {
         int sequence = tokenCeiling(grant);
         int intArg = Math.max(1, grant.getIntArg());
 
-        ItemStack stack = switch (kind) {
-            case ACTING_BOTTLE -> api.createActingBottle(bottleActing(needed, grant));
-            case SPIRITUALITY_POTION -> api.createSpiritualityPotion(tier, intArg);
-            case ACTING_MULTIPLIER -> api.createActingMultiplier(tier, grant.getAmount(), intArg);
-            case SPIRITUALITY_REGEN -> api.createSpiritualityRegenBooster(tier, grant.getAmount(), intArg);
-            case ANTI_CONTROL_CHARM -> api.createAntiControlCharm();
-            case RITUAL_BOOK -> api.createRitualBook(intArg);
-            case INGREDIENT_TOKEN -> api.createIngredientToken();
-            case RECIPE_TOKEN -> api.createRecipeToken(sequence);
-            case POTION_TOKEN -> api.createPotionToken(sequence);
-            case UNIVERSAL_RECIPE_TOKEN -> api.createUniversalRecipeToken(sequence);
-            case UNIVERSAL_POTION_TOKEN -> api.createUniversalPotionToken(sequence);
-            case PATHWAY_TRANSFER_TOKEN -> api.createPathwayTransferToken();
+        String id = switch (kind) {
+            case ACTING_BOTTLE -> "acting-bottle?amount=" + bottleActing(needed, grant);
+            case SPIRITUALITY_POTION -> "spirituality-potion-" + tier + "?restore-percentage=" + Math.min(100, intArg);
+            case ACTING_MULTIPLIER -> "acting-multiplier-" + tier + boost(grant.getAmount(), intArg);
+            case SPIRITUALITY_REGEN -> "spirituality-regen-booster-" + tier + boost(grant.getAmount(), intArg);
+            case ANTI_CONTROL_CHARM -> "anti-control-charm";
+            case RITUAL_BOOK -> "ritual-book-tier" + Math.clamp(intArg, 1, 3);
+            case INGREDIENT_TOKEN -> "ingredient-token";
+            case RECIPE_TOKEN -> "recipe-token?max-sequence=" + sequence;
+            case POTION_TOKEN -> "potion-token?max-sequence=" + sequence;
+            case UNIVERSAL_RECIPE_TOKEN -> "universal-recipe-token?max-sequence=" + sequence;
+            case UNIVERSAL_POTION_TOKEN -> "universal-potion-token?max-sequence=" + sequence;
+            case PATHWAY_TRANSFER_TOKEN -> "pathway-transfer-token";
         };
+        ItemStack stack = item(api, id);
 
         if (stack != null && grant.getCount() > 1) {
             stack.setAmount(Math.min(stack.getMaxStackSize(), grant.getCount()));
         }
         return Optional.ofNullable(stack);
+    }
+
+    private static String boost(double multiplier, int durationSeconds) {
+        return "?multiplier=" + Math.max(1.0, multiplier) + "&duration-seconds=" + durationSeconds;
+    }
+
+    private static ItemStack item(CircleOfImaginationApi api, String id) {
+        return api.items().create(id, 1).orElse(null);
     }
 
     private static int tokenCeiling(RewardGrant grant) {
@@ -411,17 +432,24 @@ public class RewardRedeemer {
 
     @RequiredArgsConstructor
     private static class Redemption {
-        private final CircleOfImaginationAPI api;
+        private final CircleOfImaginationApi api;
         private final CoiCapabilities capabilities;
         private final Player player;
         private final String pathway;
         private final int needed;
+        private final String eventId;
         private final List<Component> summary = new ArrayList<>();
         private final List<ItemStack> items = new ArrayList<>();
         private final List<RewardGrant> itemGrants = new ArrayList<>();
 
+        private int receipts;
+
         boolean isBeyonder() {
             return pathway != null;
+        }
+
+        String nextReceipt() {
+            return eventId + "/" + receipts++;
         }
 
         void addItem(ItemStack stack, RewardGrant grant) {

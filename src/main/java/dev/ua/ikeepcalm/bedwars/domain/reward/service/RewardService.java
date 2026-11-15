@@ -9,6 +9,7 @@ import dev.ua.ikeepcalm.bedwars.domain.reward.model.source.RewardDenial;
 import dev.ua.ikeepcalm.bedwars.domain.reward.model.source.RewardKind;
 import dev.ua.ikeepcalm.bedwars.domain.reward.model.source.RewardTier;
 import dev.ua.ikeepcalm.bedwars.net.minigame.model.EventReservation;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderView;
 import lombok.Getter;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.title.Title;
@@ -268,8 +269,8 @@ public class RewardService {
             return data.getPathway();
         }
 
-        var pathways = plugin.getCircleOfImaginationAPI().getPathwayData(player);
-        return pathways.isEmpty() ? null : pathways.getFirst().name();
+        var pathways = plugin.getCircleOfImaginationApi().beyonders().find(player.getUniqueId()).map(BeyonderView::getOwnedPathways).orElse(List.of());
+        return pathways.isEmpty() ? null : pathways.getFirst().getKey();
     }
 
     private static String nameOf(UUID playerId) {

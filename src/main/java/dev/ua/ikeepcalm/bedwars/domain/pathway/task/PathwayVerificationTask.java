@@ -6,8 +6,8 @@ import de.marcely.bedwars.api.arena.ArenaStatus;
 import de.marcely.bedwars.api.arena.Team;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.domain.pathway.model.PlayerMagicData;
-import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
-import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationApi;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderView;
 import lombok.RequiredArgsConstructor;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitRunnable;
@@ -54,14 +54,14 @@ public class PathwayVerificationTask extends BukkitRunnable {
             return "holds " + data.getPathway() + " but should hold " + expected;
         }
 
-        CircleOfImaginationAPI api = plugin.getCircleOfImaginationAPI();
-        if (!api.isVirtualBeyonder(player)) {
+        CircleOfImaginationApi api = plugin.getCircleOfImaginationApi();
+        if (!api.beyonders().isVirtual(player.getUniqueId())) {
             return "no active sandbox loadout";
         }
 
-        BeyonderData beyonderData = api.getBeyonderData(player);
-        if (beyonderData == null || beyonderData.pathways().isEmpty()
-            || !beyonderData.pathways().getFirst().name().equals(expected)) {
+        BeyonderView beyonderData = api.beyonders().find(player.getUniqueId()).orElse(null);
+        if (beyonderData == null || beyonderData.getOwnedPathways().isEmpty()
+            || !beyonderData.getOwnedPathways().getFirst().getKey().equals(expected)) {
             return "sandbox runs the wrong pathway";
         }
         return null;

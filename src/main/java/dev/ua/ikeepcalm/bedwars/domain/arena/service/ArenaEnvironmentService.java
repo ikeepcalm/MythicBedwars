@@ -26,7 +26,7 @@ public class ArenaEnvironmentService {
         }
 
         try {
-            plugin.getCircleOfImaginationAPI().setEnvironmentNeutral(world, neutral);
+            plugin.getCircleOfImaginationApi().abilities().setEnvironmentNeutral(world, neutral);
         } catch (LinkageError error) {
             supported = false;
             plugin.getLogger().warning("The loaded Circle of Imagination has no environmental-gate API ("

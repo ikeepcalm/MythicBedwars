@@ -1,6 +1,7 @@
 package dev.ua.ikeepcalm.bedwars.domain.item.service;
 
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
+import dev.ua.ikeepcalm.coi.api.item.ItemApi;
 import lombok.RequiredArgsConstructor;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -8,7 +9,9 @@ import org.bukkit.inventory.ItemStack;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Stream;
 
 @RequiredArgsConstructor
 public class MaterialGrantService {
@@ -21,9 +24,10 @@ public class MaterialGrantService {
 
         for (String pathway : pathways) {
             for (int sequence : shuffledSequences(sequenceFloor)) {
-                ItemStack item = plugin.getCircleOfImaginationAPI().getChar(pathway, sequence);
-                if (item != null && !item.getType().isAir()) {
-                    return SandboxItems.tag(item);
+                Optional<ItemStack> item = plugin.getCircleOfImaginationApi().items()
+                        .create("characteristic?pathway=" + pathway + "&seq=" + sequence, 1);
+                if (item.isPresent()) {
+                    return SandboxItems.tag(item.get());
                 }
             }
         }
@@ -32,12 +36,9 @@ public class MaterialGrantService {
 
     public ItemStack rollIngredient(String pathway, int sequenceFloor) {
         for (int sequence : shuffledSequences(sequenceFloor)) {
-            List<ItemStack> candidates = plugin.getCircleOfImaginationAPI().getIngredientsForSequence(pathway, sequence);
-            if (candidates == null) {
-                continue;
-            }
-
-            List<ItemStack> usable = candidates.stream()
+            ItemApi items = plugin.getCircleOfImaginationApi().items();
+            List<ItemStack> usable = Stream.concat(items.mainIngredients(pathway, sequence).stream(),
+                            items.supplementaryIngredients(pathway, sequence).stream())
                     .filter(candidate -> candidate != null && !candidate.getType().isAir())
                     .toList();
             if (!usable.isEmpty()) {
@@ -75,11 +76,7 @@ public class MaterialGrantService {
     }
 
     private List<String> allowedPathways() {
-        List<String> names = plugin.getCircleOfImaginationAPI().getAllPathwayNames();
-        if (names == null) {
-            return new ArrayList<>();
-        }
-
+        List<String> names = plugin.getCircleOfImaginationApi().progression().pathways();
         List<String> allowed = new ArrayList<>(names.stream().filter(plugin.getConfigManager()::isPathwayAllowed).toList());
         return allowed.isEmpty() ? new ArrayList<>(names) : allowed;
     }

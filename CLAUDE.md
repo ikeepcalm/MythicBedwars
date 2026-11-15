@@ -215,7 +215,7 @@ Consequences worth knowing:
    - Paper API `26.3` (`api-version: '26.3'`).
    - `MBedwars` 5.5.5+ — `softdepend`; runtime-gated in `checkMBedwarsSupported()`. Compiles against
      the 5.5.7 API.
-   - `CircleOfImagination` 1.4.9-SNAPSHOT API — `depend`. Newer additions are probed at runtime by
+   - `CircleOfImagination` 1.6.1-SNAPSHOT API — `depend`. Newer additions are probed at runtime by
      `CoiCapabilities`; never name a newly added enum constant as a compile-time constant.
    - `Plan` — optional, reached reflectively in `registerPlanStatistics`.
    - `Jedis` / `commons-pool2` / `sqlite-jdbc` — runtime-only via `libraries:`.
@@ -228,10 +228,12 @@ Consequences worth knowing:
 - **COI sequence numbers are inverted.** Lower is *stronger*. A token's `maxSequence` is a power
   ceiling, and the exchange GUI walks 9 *down* to it, so `9` offers only the weakest tier and `0`
   offers everything.
-- **`setActingSpeedMultiplier` / `setActingItemMultiplier` take a duration, not a timestamp.** COI
+- **`acting().setSpeedBoost` / `setItemMultiplier` take a duration, not a timestamp.** COI
   adds "now" itself.
-- **`grantActing` returns 0 for a pathway the player does not hold**, so no reward may name a
+- **`acting().grant` refuses a pathway the player does not hold**, so no reward may name a
   pathway; everything resolves against their real primary one.
+- **`acting().grant` answers `SANDBOX` for a virtual Beyonder.** In-match acting goes through
+  `beyonders().setVirtualActing`, which writes the primary bar directly and never reaches the ledger.
 - **`KickReason#isRageQuit()` is far broader than its name** — it also covers `SERVER_DISCONNECT`,
   `TELEPORT`, `SPECTATE` and any third-party `PLUGIN` kick. Match on `LEAVE` explicitly.
 - **`RoundEndEvent` reports every collection as empty on a tie.** That is the documented contract.

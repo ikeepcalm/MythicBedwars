@@ -8,8 +8,9 @@ import de.marcely.bedwars.api.game.specialitem.SpecialItemUseSession;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.domain.pathway.model.PlayerMagicData;
 import dev.ua.ikeepcalm.bedwars.domain.pathway.service.PathwayManager;
-import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
-import dev.ua.ikeepcalm.coi.api.model.PathwayData;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationApi;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderView;
+import dev.ua.ikeepcalm.coi.api.model.PathwayView;
 import org.bukkit.entity.Player;
 
 import java.util.List;
@@ -78,27 +79,27 @@ public class PotionItemSession extends SpecialItemUseSession {
     }
 
     private boolean advance(Player player) {
-        CircleOfImaginationAPI api = plugin.getCircleOfImaginationAPI();
-        if (!api.isBeyonder(player)) {
+        CircleOfImaginationApi api = plugin.getCircleOfImaginationApi();
+        if (!api.beyonders().isBeyonder(player.getUniqueId())) {
             return false;
         }
 
-        List<PathwayData> pathways = api.getPathwayData(player);
+        List<PathwayView> pathways = api.beyonders().find(player.getUniqueId()).map(BeyonderView::getOwnedPathways).orElse(List.of());
         if (pathways.isEmpty()) {
             return false;
         }
 
-        PathwayData primary = pathways.getFirst();
-        if (sequence != primary.lowestSequenceLevel() - 1) {
+        PathwayView primary = pathways.getFirst();
+        if (sequence != primary.getSequence() - 1) {
             player.sendMessage(plugin.getLocaleManager().formatMessage(player, "magic.messages.wrong_potion"));
             return false;
         }
 
-        if (primary.acting() != primary.neededActing()) {
+        if (primary.getActing() != primary.getRequired()) {
             player.sendMessage(plugin.getLocaleManager().formatMessage(player, "magic.messages.no_acting"));
             return false;
         }
 
-        return api.enterVirtualBeyonder(player, primary.name(), sequence);
+        return api.beyonders().enterVirtual(player, primary.getKey(), sequence);
     }
 }

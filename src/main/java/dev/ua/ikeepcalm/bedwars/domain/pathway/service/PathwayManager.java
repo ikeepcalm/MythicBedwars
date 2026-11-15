@@ -6,8 +6,8 @@ import de.marcely.bedwars.api.arena.Team;
 import dev.ua.ikeepcalm.bedwars.MythicBedwars;
 import dev.ua.ikeepcalm.bedwars.domain.pathway.model.PathwayOutcome;
 import dev.ua.ikeepcalm.bedwars.domain.pathway.model.PlayerMagicData;
-import dev.ua.ikeepcalm.coi.api.CircleOfImaginationAPI;
-import dev.ua.ikeepcalm.coi.api.model.BeyonderData;
+import dev.ua.ikeepcalm.coi.api.CircleOfImaginationApi;
+import dev.ua.ikeepcalm.coi.api.model.BeyonderView;
 import lombok.Data;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
@@ -35,7 +35,7 @@ public class PathwayManager {
     private final Map<UUID, PlayerMagicData> playerData = new ConcurrentHashMap<>();
     private final Map<String, Set<UUID>> arenaPlayers = new ConcurrentHashMap<>();
     private final Map<String, Map<UUID, IndividualDraw>> arenaIndividualPathways = new ConcurrentHashMap<>();
-    private final CircleOfImaginationAPI circleOfImaginationAPI = MythicBedwars.getInstance().getCircleOfImaginationAPI();
+    private final CircleOfImaginationApi circleOfImaginationAPI = MythicBedwars.getInstance().getCircleOfImaginationApi();
 
     @Data
     private static class IndividualDraw {
@@ -300,7 +300,7 @@ public class PathwayManager {
         existing.updatePlayTimeOnDisconnect();
         PlayerMagicData data = pathway.equals(existing.getPathway()) ? existing : swapPathway(player, pathway, existing);
         if (data.getStoredActing() > 0) {
-            circleOfImaginationAPI.setPrimaryActing(player, data.getStoredActing());
+            circleOfImaginationAPI.beyonders().setVirtualActing(player.getUniqueId(), data.getStoredActing());
         }
 
         data.resetGameStartTimeOnReconnect();
@@ -310,8 +310,8 @@ public class PathwayManager {
 
     private PlayerMagicData swapPathway(Player player, String pathway, PlayerMagicData existing) {
         PlayerMagicData replacement = new PlayerMagicData(player.getUniqueId(), pathway, existing.getArenaName());
-        BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(player);
-        replacement.setCurrentSequence(beyonderData != null ? beyonderData.lowestSequence() : existing.getCurrentSequence());
+        BeyonderView beyonderData = circleOfImaginationAPI.beyonders().find(player.getUniqueId()).orElse(null);
+        replacement.setCurrentSequence(beyonderData != null ? beyonderData.getLowestSequence() : existing.getCurrentSequence());
         replacement.setStoredActing(existing.getStoredActing());
         replacement.setTotalPlayTime(existing.getTotalPlayTime());
         playerData.put(player.getUniqueId(), replacement);
@@ -319,7 +319,7 @@ public class PathwayManager {
     }
 
     private boolean enterSandbox(Player player, String pathway, int sequence) {
-        if (circleOfImaginationAPI.enterVirtualBeyonder(player, pathway, sequence)) {
+        if (circleOfImaginationAPI.beyonders().enterVirtual(player, pathway, sequence)) {
             return true;
         }
 
@@ -334,13 +334,13 @@ public class PathwayManager {
             return;
         }
 
-        BeyonderData beyonderData = circleOfImaginationAPI.getBeyonderData(player);
-        if (beyonderData != null && !beyonderData.pathways().isEmpty()) {
-            data.setCurrentSequence(beyonderData.lowestSequence());
-            data.setStoredActing(beyonderData.pathways().getFirst().acting());
+        BeyonderView beyonderData = circleOfImaginationAPI.beyonders().find(player.getUniqueId()).orElse(null);
+        if (beyonderData != null && !beyonderData.getOwnedPathways().isEmpty()) {
+            data.setCurrentSequence(beyonderData.getLowestSequence());
+            data.setStoredActing(beyonderData.getOwnedPathways().getFirst().getActing());
         }
 
-        circleOfImaginationAPI.exitVirtualBeyonder(player);
+        circleOfImaginationAPI.beyonders().exitVirtual(player.getUniqueId());
         data.updatePlayTimeOnDisconnect();
         data.setActive(false);
     }
@@ -353,7 +353,7 @@ public class PathwayManager {
             if (players != null) {
                 players.remove(playerId);
             }
-            circleOfImaginationAPI.exitVirtualBeyonder(player);
+            circleOfImaginationAPI.beyonders().exitVirtual(player.getUniqueId());
         }
         lastAnnouncement.remove(playerId);
     }
@@ -377,7 +377,7 @@ public class PathwayManager {
 
             Player player = Bukkit.getPlayer(playerId);
             if (player != null) {
-                circleOfImaginationAPI.exitVirtualBeyonder(player);
+                circleOfImaginationAPI.beyonders().exitVirtual(player.getUniqueId());
             }
             playerData.remove(playerId, data);
             lastAnnouncement.remove(playerId);
@@ -388,7 +388,7 @@ public class PathwayManager {
         for (PlayerMagicData data : playerData.values()) {
             Player player = Bukkit.getPlayer(data.getPlayerId());
             if (player != null) {
-                circleOfImaginationAPI.exitVirtualBeyonder(player);
+                circleOfImaginationAPI.beyonders().exitVirtual(player.getUniqueId());
             }
         }
         playerData.clear();

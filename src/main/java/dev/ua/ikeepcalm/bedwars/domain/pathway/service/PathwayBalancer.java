@@ -103,7 +103,7 @@ public class PathwayBalancer {
     }
 
     private List<String> getAllowedPathways() {
-        List<String> all = plugin.getCircleOfImaginationAPI().getAllPathwayNames();
+        List<String> all = plugin.getCircleOfImaginationApi().progression().pathways();
         List<String> allowed = new ArrayList<>(all.stream().filter(plugin.getConfigManager()::isPathwayAllowed).toList());
         return allowed.isEmpty() ? new ArrayList<>(all) : allowed;
     }
@@ -113,7 +113,7 @@ public class PathwayBalancer {
         int minGames = plugin.getConfigManager().getMinGamesForBalance();
         Map<String, Double> winRates = new HashMap<>();
 
-        for (String pathway : plugin.getCircleOfImaginationAPI().getAllPathwayNames()) {
+        for (String pathway : plugin.getCircleOfImaginationApi().progression().pathways()) {
             if (!plugin.getConfigManager().isPathwayAllowed(pathway)) {
                 continue;
             }
@@ -124,7 +124,7 @@ public class PathwayBalancer {
         }
 
         if (winRates.isEmpty()) {
-            return new ArrayList<>(plugin.getCircleOfImaginationAPI().getAllPathwayNames());
+            return new ArrayList<>(plugin.getCircleOfImaginationApi().progression().pathways());
         }
 
         double avgWinRate = winRates.values().stream().filter(rate -> !rate.isNaN()).mapToDouble(Double::doubleValue).average().orElse(Double.NaN);
